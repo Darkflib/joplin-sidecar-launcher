@@ -1,5 +1,5 @@
 import { spawn, ChildProcess } from 'child_process';
-import { SidecarConfig, SidecarState, SidecarStatus, HealthStatus, LogLine } from './types';
+import { SidecarEntry, SidecarState, SidecarStatus, HealthStatus, LogLine } from './types';
 import { checkHealth } from './health';
 
 type StatusChangeCallback = (status: SidecarStatus) => void;
@@ -8,12 +8,11 @@ type StatusChangeCallback = (status: SidecarStatus) => void;
 const PYTHON_ENV_BLOCKLIST = ['PYTHONHOME', 'PYTHONPATH', 'PYTHONSTARTUP', 'VIRTUAL_ENV', 'CONDA_PREFIX'];
 
 /**
- * Sanitised child environment shared by the managed `serve` process and the
- * one-shot `open` invocation: strips Python vars that poison child interpreters,
- * marks the launch source, and injects Joplin connection details (token from the
- * keychain). The token is never logged or included in diagnostics.
+ * Sanitised child environment: strips Python vars that poison child interpreters,
+ * marks the launch source, and injects the shared Joplin connection details
+ * (token from the keychain). The token is never logged or included in diagnostics.
  */
-function buildChildEnv(config: SidecarConfig): Record<string, string> {
+function buildChildEnv(entry: SidecarEntry): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
     if (v !== undefined && !PYTHON_ENV_BLOCKLIST.includes(k)) {
@@ -21,53 +20,48 @@ function buildChildEnv(config: SidecarConfig): Record<string, string> {
     }
   }
   env['JOPLIN_SIDECAR_LAUNCHED_BY'] = 'joplin-sidecar-launcher';
-  if (config.joplinBaseUrl) env['JOPLIN_BASE_URL'] = config.joplinBaseUrl;
-  if (config.joplinToken) env['JOPLIN_TOKEN'] = config.joplinToken;
+  if (entry.joplinBaseUrl) env['JOPLIN_BASE_URL'] = entry.joplinBaseUrl;
+  if (entry.joplinToken) env['JOPLIN_TOKEN'] = entry.joplinToken;
   return env;
 }
 
-/**
- * Open the sidecar dashboard in the default browser by running the sidecar's own
- * `open` command (which reads the ephemeral token file and hands the token off
- * via the URL fragment). Reuses the configured command and the prefix before
- * `serve`, swapping in `open --port <port>` (port taken from the health URL).
- */
-export async function openDashboard(config: SidecarConfig): Promise<{ ok: boolean; message: string }> {
-  if (!config.command) {
-    return { ok: false, message: 'Command is not set.' };
+/** Platform-appropriate "open this URL in the default browser" command. */
+function osOpenCommand(url: string): { cmd: string; args: string[] } {
+  switch (process.platform) {
+    case 'darwin':
+      return { cmd: 'open', args: [url] };
+    case 'win32':
+      // `start` is a cmd builtin; the empty "" is the window title placeholder.
+      return { cmd: 'cmd', args: ['/c', 'start', '', url] };
+    default:
+      return { cmd: 'xdg-open', args: [url] };
   }
-  let port = '8765';
-  if (config.healthUrl) {
-    try {
-      port = new URL(config.healthUrl).port || port;
-    } catch {
-      /* keep default */
-    }
-  }
-  const serveIdx = config.args.indexOf('serve');
-  const prefix = serveIdx >= 0 ? config.args.slice(0, serveIdx) : [];
-  const openArgs = [...prefix, 'open', '--port', port];
+}
 
+/**
+ * Open the sidecar's configured dashboard URL in the default browser via the OS
+ * URL handler. Generic — works for any sidecar that exposes a web UI, not just
+ * ones with a bespoke `open` subcommand.
+ */
+export async function openDashboard(entry: SidecarEntry): Promise<{ ok: boolean; message: string }> {
+  if (!entry.dashboardUrl) {
+    return { ok: false, message: 'No dashboard URL configured for this sidecar.' };
+  }
+  const { cmd, args } = osOpenCommand(entry.dashboardUrl);
   try {
-    const child = spawn(config.command, openArgs, {
-      cwd: config.cwd || process.env.HOME || undefined,
-      env: buildChildEnv(config),
-      shell: false,
-      stdio: 'ignore',
-      detached: true,
-    });
-    if (!child.pid) {
-      return { ok: false, message: 'Could not launch the dashboard opener (no PID).' };
-    }
+    const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
+    // ENOENT etc. surface asynchronously; swallow so a missing opener can't crash the plugin.
+    child.on('error', () => { /* best-effort open */ });
     child.unref();
-    return { ok: true, message: `Opening dashboard at http://127.0.0.1:${port}/ …` };
+    return { ok: true, message: `Opening ${entry.dashboardUrl} …` };
   } catch (e: unknown) {
     return { ok: false, message: `Failed to open dashboard: ${(e as Error).message}` };
   }
 }
 
 export class ProcessManager {
-  private config: SidecarConfig | null = null;
+  private readonly id: string;
+  private config: SidecarEntry | null = null;
   private child: ChildProcess | null = null;
   private state: SidecarState = 'stopped';
   private pid: number | undefined;
@@ -86,12 +80,14 @@ export class ProcessManager {
 
   private onStatusChange: StatusChangeCallback;
 
-  constructor(onStatusChange: StatusChangeCallback) {
+  constructor(id: string, onStatusChange: StatusChangeCallback) {
+    this.id = id;
     this.onStatusChange = onStatusChange;
   }
 
   getStatus(): SidecarStatus {
     return {
+      id: this.id,
       state: this.state,
       pid: this.pid,
       startedAt: this.startedAt,
@@ -105,12 +101,12 @@ export class ProcessManager {
     };
   }
 
-  async start(config: SidecarConfig): Promise<{ ok: boolean; message: string }> {
+  async start(config: SidecarEntry): Promise<{ ok: boolean; message: string }> {
     if (this.state !== 'stopped' && this.state !== 'crashed') {
-      return { ok: false, message: `Sidecar is already ${this.state}. Stop it first.` };
+      return { ok: false, message: `"${config.name}" is already ${this.state}. Stop it first.` };
     }
     if (!config.command) {
-      return { ok: false, message: 'Command is empty. Configure it in Joplin Settings > Sidecar Launcher.' };
+      return { ok: false, message: 'Command is empty. Configure it in the Sidecars JSON.' };
     }
 
     this.config = config;
@@ -207,7 +203,7 @@ export class ProcessManager {
       this.startHealthPolling(config.healthUrl, config.healthIntervalSeconds);
     }
 
-    return { ok: true, message: `Sidecar started (PID ${child.pid}).` };
+    return { ok: true, message: `"${config.name}" started (PID ${child.pid}).` };
   }
 
   async stop(): Promise<{ ok: boolean; message: string }> {
@@ -225,7 +221,7 @@ export class ProcessManager {
     return { ok: true, message: 'Stop signal sent.' };
   }
 
-  async restart(config: SidecarConfig): Promise<{ ok: boolean; message: string }> {
+  async restart(config: SidecarEntry): Promise<{ ok: boolean; message: string }> {
     if (this.child) {
       const stopResult = await this.stop();
       if (!stopResult.ok) return stopResult;
@@ -287,7 +283,82 @@ export class ProcessManager {
   }
 
   // Expose config for diagnostics (read-only accessor)
-  getConfig(): SidecarConfig | null {
+  getConfig(): SidecarEntry | null {
     return this.config;
+  }
+}
+
+/** A 'stopped' placeholder status for an id with no live manager yet. */
+export function emptyStatus(id: string): SidecarStatus {
+  return { id, state: 'stopped', health: 'not_configured', recentLogs: [] };
+}
+
+/**
+ * Owns one ProcessManager per sidecar id. Routes lifecycle calls to the right
+ * manager and forwards every status change (already tagged with its id) up to a
+ * single callback.
+ */
+export class ManagerPool {
+  private managers = new Map<string, ProcessManager>();
+  private onStatusChange: StatusChangeCallback;
+
+  constructor(onStatusChange: StatusChangeCallback) {
+    this.onStatusChange = onStatusChange;
+  }
+
+  private ensure(id: string): ProcessManager {
+    let m = this.managers.get(id);
+    if (!m) {
+      m = new ProcessManager(id, this.onStatusChange);
+      this.managers.set(id, m);
+    }
+    return m;
+  }
+
+  start(id: string, entry: SidecarEntry): Promise<{ ok: boolean; message: string }> {
+    return this.ensure(id).start(entry);
+  }
+
+  restart(id: string, entry: SidecarEntry): Promise<{ ok: boolean; message: string }> {
+    return this.ensure(id).restart(entry);
+  }
+
+  async stop(id: string): Promise<{ ok: boolean; message: string }> {
+    const m = this.managers.get(id);
+    if (!m) return { ok: false, message: 'Sidecar is not running.' };
+    return m.stop();
+  }
+
+  getStatus(id: string): SidecarStatus {
+    return this.managers.get(id)?.getStatus() ?? emptyStatus(id);
+  }
+
+  getConfig(id: string): SidecarEntry | null {
+    return this.managers.get(id)?.getConfig() ?? null;
+  }
+
+  isRunning(id: string): boolean {
+    return this.managers.get(id)?.isRunning() ?? false;
+  }
+
+  /** True if any managed sidecar is currently running. */
+  anyRunning(): boolean {
+    for (const m of this.managers.values()) {
+      if (m.isRunning()) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Stop running sidecars. With no predicate, stops all; otherwise stops only
+   * those whose id satisfies `shouldStop` (used on unload to honour each entry's
+   * stopOnUnload flag while still cleaning up orphans).
+   */
+  async stopAll(shouldStop?: (id: string) => boolean): Promise<void> {
+    const stops: Promise<unknown>[] = [];
+    for (const [id, m] of this.managers.entries()) {
+      if (m.isRunning() && (!shouldStop || shouldStop(id))) stops.push(m.stop());
+    }
+    await Promise.all(stops);
   }
 }
