@@ -1,10 +1,12 @@
 {
   "name": "joplin-sidecar-launcher",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Launch, monitor, and stop local sidecar processes from within Joplin",
   "scripts": {
     "dist": "webpack --env production",
     "build": "webpack",
+    "package": "npm run dist && cd publish && tar -cf ../joplin-sidecar-launcher.jpl index.js manifest.json",
+    "typecheck": "tsc --noEmit",
     "prepare": "npm run dist"
   },
   "devDependencies": {

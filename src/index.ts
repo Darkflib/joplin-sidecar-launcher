@@ -6,7 +6,7 @@ import { createPanel, updatePanel, togglePanel } from './panel';
 import { copyDiagnostics } from './diagnostics';
 import { SidecarStatus } from './types';
 
-const PLUGIN_VERSION = '0.1.0';
+const PLUGIN_VERSION = '0.1.1';
 
 joplin.plugins.register({
   onStart: async function () {

@@ -95,11 +95,17 @@ npm install
 npm run dist          # production webpack bundle → publish/
 ```
 
-The `publish/` directory contains `index.js` and `manifest.json`. To package as a `.jpl` (a zip with those two files):
+The `publish/` directory contains `index.js` and `manifest.json`. To package as a `.jpl`:
+
+```bash
+npm run package
+```
+
+Or manually (`.jpl` files are **TAR archives**, not zip — using `zip` will produce a file Joplin silently rejects):
 
 ```bash
 cd publish
-zip -r ../joplin-sidecar-launcher.jpl index.js manifest.json
+tar -cf ../joplin-sidecar-launcher.jpl index.js manifest.json
 ```
 
 For development (source maps, watch mode):

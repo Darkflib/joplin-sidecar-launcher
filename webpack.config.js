@@ -13,6 +13,18 @@ module.exports = (env) => {
     },
     resolve: {
       extensions: ['.ts', '.js'],
+      alias: {
+        // 'api' is not an npm package — it is a thin type shim bundled with
+        // every Joplin plugin.  At runtime, 'joplin' is injected into the
+        // plugin sandbox as a context global; api/index.ts declares it ambient
+        // so webpack can bundle the reference without needing a require().
+        // This is exactly what the official generator-joplin template does.
+        'api': path.resolve(__dirname, 'api'),
+
+        // Bundle the enum values locally; api/types.ts provides the real
+        // declarations from the generator template.
+        'api/types': path.resolve(__dirname, 'api', 'types.ts'),
+      },
     },
     module: {
       rules: [
@@ -21,10 +33,8 @@ module.exports = (env) => {
           use: {
             loader: 'ts-loader',
             options: {
-              // transpileOnly skips full type-checking during webpack build.
-              // Run `tsc --noEmit` separately for a proper type-check pass.
-              // This avoids cascading errors from @joplin/lib internal .ts files
-              // being transitively resolved by the type checker.
+              // transpileOnly avoids type-checking @joplin/lib's own .ts files
+              // transitively.  Run `tsc --noEmit` separately for a proper pass.
               transpileOnly: true,
             },
           },
@@ -42,14 +52,11 @@ module.exports = (env) => {
         ],
       }),
     ],
-    // 'api' and 'api/*' are virtual modules injected by the Joplin plugin runtime.
-    // @joplin/lib is the Joplin internal library — not bundled.
-    // Using a function to catch 'api', 'api/types', and any other api/* sub-paths.
+    // No 'api' external — it is aliased to a local directory above.
+    // @joplin/lib is only a dev-time type source; nothing from it is used
+    // at runtime, so marking it external is safe (it will never be required).
     externals: [
       ({ request }, callback) => {
-        if (request === 'api' || (request && request.startsWith('api/'))) {
-          return callback(null, `commonjs ${request}`);
-        }
         if (request && request.startsWith('@joplin/lib')) {
           return callback(null, `commonjs ${request}`);
         }

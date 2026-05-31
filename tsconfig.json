@@ -7,13 +7,17 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "moduleResolution": "node",
+    "baseUrl": ".",
     "outDir": "dist",
-    "rootDir": "src",
     "types": ["node"],
     "skipLibCheck": true,
     "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "paths": {
+      "api": ["api/index.ts"],
+      "api/types": ["api/types.ts"]
+    }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "api/**/*"],
   "exclude": ["node_modules"]
 }
