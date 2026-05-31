@@ -7,6 +7,65 @@ type StatusChangeCallback = (status: SidecarStatus) => void;
 // Python env vars known to poison child interpreters
 const PYTHON_ENV_BLOCKLIST = ['PYTHONHOME', 'PYTHONPATH', 'PYTHONSTARTUP', 'VIRTUAL_ENV', 'CONDA_PREFIX'];
 
+/**
+ * Sanitised child environment shared by the managed `serve` process and the
+ * one-shot `open` invocation: strips Python vars that poison child interpreters,
+ * marks the launch source, and injects Joplin connection details (token from the
+ * keychain). The token is never logged or included in diagnostics.
+ */
+function buildChildEnv(config: SidecarConfig): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined && !PYTHON_ENV_BLOCKLIST.includes(k)) {
+      env[k] = v;
+    }
+  }
+  env['JOPLIN_SIDECAR_LAUNCHED_BY'] = 'joplin-sidecar-launcher';
+  if (config.joplinBaseUrl) env['JOPLIN_BASE_URL'] = config.joplinBaseUrl;
+  if (config.joplinToken) env['JOPLIN_TOKEN'] = config.joplinToken;
+  return env;
+}
+
+/**
+ * Open the sidecar dashboard in the default browser by running the sidecar's own
+ * `open` command (which reads the ephemeral token file and hands the token off
+ * via the URL fragment). Reuses the configured command and the prefix before
+ * `serve`, swapping in `open --port <port>` (port taken from the health URL).
+ */
+export async function openDashboard(config: SidecarConfig): Promise<{ ok: boolean; message: string }> {
+  if (!config.command) {
+    return { ok: false, message: 'Command is not set.' };
+  }
+  let port = '8765';
+  if (config.healthUrl) {
+    try {
+      port = new URL(config.healthUrl).port || port;
+    } catch {
+      /* keep default */
+    }
+  }
+  const serveIdx = config.args.indexOf('serve');
+  const prefix = serveIdx >= 0 ? config.args.slice(0, serveIdx) : [];
+  const openArgs = [...prefix, 'open', '--port', port];
+
+  try {
+    const child = spawn(config.command, openArgs, {
+      cwd: config.cwd || process.env.HOME || undefined,
+      env: buildChildEnv(config),
+      shell: false,
+      stdio: 'ignore',
+      detached: true,
+    });
+    if (!child.pid) {
+      return { ok: false, message: 'Could not launch the dashboard opener (no PID).' };
+    }
+    child.unref();
+    return { ok: true, message: `Opening dashboard at http://127.0.0.1:${port}/ …` };
+  } catch (e: unknown) {
+    return { ok: false, message: `Failed to open dashboard: ${(e as Error).message}` };
+  }
+}
+
 export class ProcessManager {
   private config: SidecarConfig | null = null;
   private child: ChildProcess | null = null;
@@ -63,20 +122,8 @@ export class ProcessManager {
     this.exitedAt = undefined;
     this.startedAt = new Date().toISOString();
 
-    // Build sanitised environment — strip Python env vars that pollute child interpreters
-    const env: Record<string, string> = {};
-    for (const [k, v] of Object.entries(process.env)) {
-      if (v !== undefined && !PYTHON_ENV_BLOCKLIST.includes(k)) {
-        env[k] = v;
-      }
-    }
-    env['JOPLIN_SIDECAR_LAUNCHED_BY'] = 'joplin-sidecar-launcher';
-    // Inject Joplin connection details so the sidecar can reach Joplin without a
-    // config file (the launcher has no other way to pass these). The token comes
-    // from the OS keychain via the secure setting; it is never written to logs or
-    // included in diagnostics.
-    if (config.joplinBaseUrl) env['JOPLIN_BASE_URL'] = config.joplinBaseUrl;
-    if (config.joplinToken) env['JOPLIN_TOKEN'] = config.joplinToken;
+    // Sanitised environment (strips poisoning Python vars; injects Joplin details).
+    const env = buildChildEnv(config);
 
     let child: ChildProcess;
     try {

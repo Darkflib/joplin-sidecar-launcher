@@ -1,14 +1,14 @@
 import joplin from 'api';
 import { MenuItemLocation } from 'api/types';
 import { registerSettings, loadConfig } from './settings';
-import { ProcessManager } from './processManager';
+import { ProcessManager, openDashboard } from './processManager';
 import { createPanel, updatePanel, togglePanel } from './panel';
 import { copyDiagnostics } from './diagnostics';
 import { runPreflight, hasErrors, formatPreflight } from './preflight';
 import { authoriseJoplinToken } from './joplinAuth';
 import { SidecarConfig, SidecarStatus } from './types';
 
-const PLUGIN_VERSION = '0.1.2';
+const PLUGIN_VERSION = '0.1.3';
 
 joplin.plugins.register({
   onStart: async function () {
@@ -104,6 +104,19 @@ joplin.plugins.register({
     });
 
     await joplin.commands.register({
+      name: 'sidecarLauncher.openDashboard',
+      label: 'Open Dashboard',
+      execute: async () => {
+        const config = await getValidConfig();
+        if (!config) return;
+        const result = await openDashboard(config);
+        if (!result.ok) {
+          await joplin.views.dialogs.showMessageBox(result.message);
+        }
+      },
+    });
+
+    await joplin.commands.register({
       name: 'sidecarLauncher.preflight',
       label: 'Run Preflight Checks',
       execute: async () => {
@@ -142,6 +155,7 @@ joplin.plugins.register({
       { commandName: 'sidecarLauncher.stop' },
       { commandName: 'sidecarLauncher.restart' },
       { commandName: 'sidecarLauncher.togglePanel' },
+      { commandName: 'sidecarLauncher.openDashboard' },
       { commandName: 'sidecarLauncher.preflight' },
       { commandName: 'sidecarLauncher.authoriseJoplin' },
       { commandName: 'sidecarLauncher.copyDiagnostics' },

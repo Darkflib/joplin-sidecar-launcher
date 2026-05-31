@@ -106,6 +106,7 @@ function buildHtml(status: SidecarStatus | null): string {
     ${btn('Start', 'start')}
     ${btn('Stop', 'stop')}
     ${btn('Restart', 'restart')}
+    ${btn('Open dashboard', 'openDashboard')}
     ${btn('Preflight', 'preflight')}
     ${btn('Authorise Joplin', 'authoriseJoplin')}
     ${btn('Copy diag', 'copyDiagnostics')}
