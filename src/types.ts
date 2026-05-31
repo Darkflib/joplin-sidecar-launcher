@@ -30,6 +30,8 @@ export interface SidecarConfig {
   stopOnUnload: boolean;
   healthIntervalSeconds: number;
   maxLogLines: number;
+  joplinBaseUrl?: string;
+  joplinToken?: string;
 }
 
 export interface SidecarStatus {

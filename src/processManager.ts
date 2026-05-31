@@ -71,6 +71,12 @@ export class ProcessManager {
       }
     }
     env['JOPLIN_SIDECAR_LAUNCHED_BY'] = 'joplin-sidecar-launcher';
+    // Inject Joplin connection details so the sidecar can reach Joplin without a
+    // config file (the launcher has no other way to pass these). The token comes
+    // from the OS keychain via the secure setting; it is never written to logs or
+    // included in diagnostics.
+    if (config.joplinBaseUrl) env['JOPLIN_BASE_URL'] = config.joplinBaseUrl;
+    if (config.joplinToken) env['JOPLIN_TOKEN'] = config.joplinToken;
 
     let child: ChildProcess;
     try {

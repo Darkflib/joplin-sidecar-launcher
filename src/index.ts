@@ -4,9 +4,11 @@ import { registerSettings, loadConfig } from './settings';
 import { ProcessManager } from './processManager';
 import { createPanel, updatePanel, togglePanel } from './panel';
 import { copyDiagnostics } from './diagnostics';
-import { SidecarStatus } from './types';
+import { runPreflight, hasErrors, formatPreflight } from './preflight';
+import { authoriseJoplinToken } from './joplinAuth';
+import { SidecarConfig, SidecarStatus } from './types';
 
-const PLUGIN_VERSION = '0.1.1';
+const PLUGIN_VERSION = '0.1.2';
 
 joplin.plugins.register({
   onStart: async function () {
@@ -32,6 +34,18 @@ joplin.plugins.register({
       return config;
     }
 
+    // Run preflight; on hard errors show guidance and return true (blocked).
+    async function blockedByPreflight(config: SidecarConfig): Promise<boolean> {
+      const results = runPreflight(config);
+      if (hasErrors(results)) {
+        await joplin.views.dialogs.showMessageBox(
+          `Cannot start the sidecar — preflight checks failed:\n\n${formatPreflight(results)}`,
+        );
+        return true;
+      }
+      return false;
+    }
+
     // Register commands
     await joplin.commands.register({
       name: 'sidecarLauncher.start',
@@ -39,6 +53,7 @@ joplin.plugins.register({
       execute: async () => {
         const config = await getValidConfig();
         if (!config) return;
+        if (await blockedByPreflight(config)) return;
         const result = await manager.start(config);
         if (!result.ok) {
           await joplin.views.dialogs.showMessageBox(result.message);
@@ -63,6 +78,7 @@ joplin.plugins.register({
       execute: async () => {
         const config = await getValidConfig();
         if (!config) return;
+        if (await blockedByPreflight(config)) return;
         const result = await manager.restart(config);
         if (!result.ok) {
           await joplin.views.dialogs.showMessageBox(result.message);
@@ -87,12 +103,47 @@ joplin.plugins.register({
       },
     });
 
+    await joplin.commands.register({
+      name: 'sidecarLauncher.preflight',
+      label: 'Run Preflight Checks',
+      execute: async () => {
+        const { config } = await loadConfig();
+        await joplin.views.dialogs.showMessageBox(
+          `Sidecar preflight checks:\n\n${formatPreflight(runPreflight(config))}`,
+        );
+      },
+    });
+
+    await joplin.commands.register({
+      name: 'sidecarLauncher.authoriseJoplin',
+      label: 'Authorise Joplin API Token',
+      execute: async () => {
+        const baseUrl =
+          ((await joplin.settings.value('sidecar.joplinBaseUrl')) as string) ||
+          'http://127.0.0.1:41184';
+        await joplin.views.dialogs.showMessageBox(
+          'Requesting access to Joplin. Click OK, then approve the prompt that appears in Joplin.',
+        );
+        const result = await authoriseJoplinToken(baseUrl);
+        if (result.ok && result.token) {
+          await joplin.settings.setValue('sidecar.joplinToken', result.token);
+          await joplin.views.dialogs.showMessageBox(
+            'Joplin API token saved to the keychain. Restart the sidecar to apply it.',
+          );
+        } else {
+          await joplin.views.dialogs.showMessageBox(`Authorisation failed: ${result.message}`);
+        }
+      },
+    });
+
     // Register menus
     await joplin.views.menus.create('sidecarLauncherMenu', 'Sidecar Launcher', [
       { commandName: 'sidecarLauncher.start' },
       { commandName: 'sidecarLauncher.stop' },
       { commandName: 'sidecarLauncher.restart' },
       { commandName: 'sidecarLauncher.togglePanel' },
+      { commandName: 'sidecarLauncher.preflight' },
+      { commandName: 'sidecarLauncher.authoriseJoplin' },
       { commandName: 'sidecarLauncher.copyDiagnostics' },
     ], MenuItemLocation.Tools);
 
@@ -107,7 +158,15 @@ joplin.plugins.register({
     // Autostart
     const { config: initialConfig, errors: initialErrors } = await loadConfig();
     if (initialErrors.length === 0 && initialConfig.autostart && initialConfig.command) {
-      await manager.start(initialConfig);
+      const pf = runPreflight(initialConfig);
+      if (hasErrors(pf)) {
+        // Surface the misconfiguration instead of failing silently with no PID.
+        await joplin.views.dialogs.showMessageBox(
+          `Sidecar autostart skipped — preflight checks failed:\n\n${formatPreflight(pf)}`,
+        );
+      } else {
+        await manager.start(initialConfig);
+      }
     }
 
     // Stop on unload

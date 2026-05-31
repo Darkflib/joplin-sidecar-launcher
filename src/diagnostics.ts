@@ -1,5 +1,6 @@
 import joplin from 'api';
 import { SidecarConfig, SidecarStatus } from './types';
+import { runPreflight, formatPreflight } from './preflight';
 
 export async function buildDiagnostics(
   config: SidecarConfig | null,
@@ -33,6 +34,9 @@ export async function buildDiagnostics(
     `Health: ${status.health}`,
     `Last health at: ${status.lastHealthAt ?? '—'}`,
     `Last health error: ${status.lastHealthError ?? '—'}`,
+    '',
+    '--- Preflight ---',
+    config ? formatPreflight(runPreflight(config)) : '(config not loaded)',
     '',
     '--- Last 20 Log Lines ---',
     ...status.recentLogs.slice(-20).map(

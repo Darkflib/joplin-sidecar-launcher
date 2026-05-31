@@ -73,9 +73,18 @@ function buildHtml(status: SidecarStatus | null): string {
   const btn = (label: string, type: string) =>
     `<button onclick="webviewApi.postMessage({type:'${type}'})" style="margin:2px 4px 2px 0;padding:4px 10px;cursor:pointer">${label}</button>`;
 
+  const crashHint = state === 'crashed'
+    ? `<div style="background:#3a1f1f;border:1px solid #f44336;border-radius:3px;padding:8px;margin-bottom:8px;font-size:12px">
+         Sidecar crashed. Run <strong>Preflight</strong> below — the most common cause is the
+         <strong>Command</strong> not being an absolute path (Joplin doesn't inherit your shell PATH).
+       </div>`
+    : '';
+
   return `
 <div style="padding:12px;font-family:sans-serif;font-size:13px;line-height:1.5">
   <h3 style="margin:0 0 8px;font-size:15px">Sidecar Launcher</h3>
+
+  ${crashHint}
 
   <table style="border-collapse:collapse;width:100%;margin-bottom:8px">
     <tr><td style="color:#777;padding:1px 8px 1px 0;white-space:nowrap">State</td>
@@ -97,6 +106,8 @@ function buildHtml(status: SidecarStatus | null): string {
     ${btn('Start', 'start')}
     ${btn('Stop', 'stop')}
     ${btn('Restart', 'restart')}
+    ${btn('Preflight', 'preflight')}
+    ${btn('Authorise Joplin', 'authoriseJoplin')}
     ${btn('Copy diag', 'copyDiagnostics')}
   </div>
 

@@ -17,7 +17,11 @@ export async function registerSettings(): Promise<void> {
       type: SettingItemType.String,
       value: '',
       label: 'Command',
-      description: 'Executable to run, e.g. python3, uv, or an absolute path.',
+      description:
+        'Executable to run. IMPORTANT: use an ABSOLUTE path (e.g. /opt/homebrew/bin/uv). ' +
+        'Joplin launched from the Dock/Finder does not inherit your shell PATH, so a bare ' +
+        '"uv"/"python3" fails to spawn ("Spawn returned no PID"). Run `which uv` in a terminal ' +
+        'to find the full path. Use Tools > Sidecar Launcher > Run preflight checks to verify.',
       public: true,
     },
     'sidecar.argsJson': {
@@ -41,7 +45,9 @@ export async function registerSettings(): Promise<void> {
       type: SettingItemType.String,
       value: '',
       label: 'Health check URL',
-      description: 'Optional. Must be a localhost URL, e.g. http://127.0.0.1:8765/health',
+      description:
+        'Localhost URL of the sidecar health endpoint. Use the /health path — e.g. ' +
+        'http://127.0.0.1:8765/health — not "/" (that returns the dashboard HTML on every poll).',
       public: true,
     },
     'sidecar.autostart': {
@@ -76,6 +82,28 @@ export async function registerSettings(): Promise<void> {
       label: 'Max log lines retained',
       public: true,
     },
+    'sidecar.joplinBaseUrl': {
+      section: SECTION_NAME,
+      type: SettingItemType.String,
+      value: 'http://127.0.0.1:41184',
+      label: 'Joplin API base URL',
+      description:
+        'Joplin Web Clipper service URL (enable it in Tools > Options > Web Clipper). ' +
+        'Injected into the sidecar as JOPLIN_BASE_URL.',
+      public: true,
+    },
+    'sidecar.joplinToken': {
+      section: SECTION_NAME,
+      type: SettingItemType.String,
+      value: '',
+      label: 'Joplin API token',
+      description:
+        'Token the sidecar uses to read Joplin (injected as JOPLIN_TOKEN). Obtain it ' +
+        'automatically via Tools > Sidecar Launcher > Authorise Joplin API token — that ' +
+        'runs the Web Clipper auth flow and you approve it in Joplin. Stored in the OS keychain.',
+      secure: true,
+      public: true,
+    },
   });
 }
 
@@ -90,6 +118,8 @@ export async function loadConfig(): Promise<{ config: SidecarConfig; errors: str
   const stopOnUnload = await joplin.settings.value('sidecar.stopOnUnload') as boolean;
   const healthIntervalSeconds = await joplin.settings.value('sidecar.healthIntervalSeconds') as number;
   const maxLogLines = await joplin.settings.value('sidecar.maxLogLines') as number;
+  const joplinBaseUrl = (await joplin.settings.value('sidecar.joplinBaseUrl') as string).trim() || undefined;
+  const joplinToken = (await joplin.settings.value('sidecar.joplinToken') as string).trim() || undefined;
 
   // Validate command
   if (!command) {
@@ -133,7 +163,10 @@ export async function loadConfig(): Promise<{ config: SidecarConfig; errors: str
   }
 
   return {
-    config: { command, args, cwd, healthUrl, autostart, stopOnUnload, healthIntervalSeconds, maxLogLines },
+    config: {
+      command, args, cwd, healthUrl, autostart, stopOnUnload, healthIntervalSeconds, maxLogLines,
+      joplinBaseUrl, joplinToken,
+    },
     errors,
   };
 }

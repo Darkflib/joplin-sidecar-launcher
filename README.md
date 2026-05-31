@@ -126,6 +126,7 @@ npm run build         # development build, no minification
 - **Log buffer is in-memory only.** Logs are lost when Joplin restarts. Persistent log files are a planned extension.
 - **No environment variable injection UI.** You can't set custom env vars from the settings panel. Work around with a wrapper script.
 - **macOS/Linux only tested.** Should work on Windows but SIGTERM semantics differ; consider using a wrapper script that handles graceful shutdown.
+- **Stop on unload does not fire when disabling the plugin mid-session.** Joplin's "disable" toggle marks the plugin for removal on the next restart; it does not call `onUnload` immediately. The sidecar keeps running until Joplin exits. `onUnload` is called when Joplin itself quits, at which point the sidecar is stopped. If you need to stop the sidecar immediately, use the Stop button before disabling.
 
 ---
 
