@@ -5,24 +5,31 @@ import { SidecarEntry } from './types';
 const PORT_PROBE_TIMEOUT_MS = 400;
 const PROBE_HOST = '127.0.0.1';
 
+function isLocalhostHost(hostname: string): boolean {
+  return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1' || hostname === '[::1]';
+}
+
+/** The explicit port of a URL, but only if it points at localhost (any protocol). */
+function localhostPort(url: string | undefined): number | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (!isLocalhostHost(u.hostname) || !u.port) return null;
+    const n = Number(u.port);
+    return Number.isInteger(n) && n > 0 && n < 65536 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * The TCP port a sidecar is expected to bind, inferred from its health URL (or,
- * failing that, its dashboard URL). Returns null if neither carries a port.
+ * The local TCP port a sidecar is expected to bind, inferred from its health URL
+ * (or, failing that, its dashboard URL). Only localhost URLs count — the reclaim
+ * probe targets 127.0.0.1, so a remote dashboard's port must not drive it.
+ * Returns null if neither carries a usable localhost port.
  */
 export function sidecarPort(entry: SidecarEntry): number | null {
-  for (const url of [entry.healthUrl, entry.dashboardUrl]) {
-    if (!url) continue;
-    try {
-      const p = new URL(url).port;
-      if (p) {
-        const n = Number(p);
-        if (Number.isInteger(n) && n > 0 && n < 65536) return n;
-      }
-    } catch {
-      /* not a parseable URL — skip */
-    }
-  }
-  return null;
+  return localhostPort(entry.healthUrl) ?? localhostPort(entry.dashboardUrl);
 }
 
 /** True if something is already accepting connections on 127.0.0.1:port. */

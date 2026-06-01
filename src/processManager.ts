@@ -43,20 +43,39 @@ function osOpenCommand(url: string): { cmd: string; args: string[] } {
  * URL handler. Generic — works for any sidecar that exposes a web UI, not just
  * ones with a bespoke `open` subcommand.
  */
-export async function openDashboard(entry: SidecarEntry): Promise<{ ok: boolean; message: string }> {
+export function openDashboard(entry: SidecarEntry): Promise<{ ok: boolean; message: string }> {
   if (!entry.dashboardUrl) {
-    return { ok: false, message: 'No dashboard URL configured for this sidecar.' };
+    return Promise.resolve({ ok: false, message: 'No dashboard URL configured for this sidecar.' });
   }
-  const { cmd, args } = osOpenCommand(entry.dashboardUrl);
-  try {
-    const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
-    // ENOENT etc. surface asynchronously; swallow so a missing opener can't crash the plugin.
-    child.on('error', () => { /* best-effort open */ });
-    child.unref();
-    return { ok: true, message: `Opening ${entry.dashboardUrl} …` };
-  } catch (e: unknown) {
-    return { ok: false, message: `Failed to open dashboard: ${(e as Error).message}` };
-  }
+  const url = entry.dashboardUrl;
+  const { cmd, args } = osOpenCommand(url);
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (r: { ok: boolean; message: string }) => {
+      if (!settled) {
+        settled = true;
+        resolve(r);
+      }
+    };
+
+    let child: ChildProcess;
+    try {
+      child = spawn(cmd, args, { stdio: 'ignore', detached: true });
+    } catch (e: unknown) {
+      done({ ok: false, message: `Failed to open dashboard: ${(e as Error).message}` });
+      return;
+    }
+
+    // The opener may fail to launch (ENOENT — no open/xdg-open) asynchronously via
+    // 'error'; only report success once the process has actually spawned.
+    child.once('error', (err) => {
+      done({ ok: false, message: `Failed to open dashboard (${cmd}): ${err.message}` });
+    });
+    child.once('spawn', () => {
+      child.unref();
+      done({ ok: true, message: `Opening ${url} …` });
+    });
+  });
 }
 
 export class ProcessManager {
