@@ -21,7 +21,7 @@ A Joplin desktop plugin that launches, monitors, and stops local sidecar process
 - **Launch** a configurable command with arguments and working directory when you click *Start* (or automatically on plugin load, per sidecar).
 - **Monitor** each process: tracks state (`stopped`, `starting`, `running`, `healthy`, `unhealthy`, `stopping`, `crashed`), PID, start/exit times, and exit code.
 - **Health polling**: optionally hits a localhost HTTP endpoint on a configurable interval and reflects the result in the panel.
-- **Open dashboard**: opens the selected sidecar's configured `dashboardUrl` in your default browser. When the sidecar exposes an `open` subcommand (detected by a `serve` arg, the Joplin-sidecar convention), the launcher invokes it so the sidecar can hand the token off via the URL fragment; otherwise it falls back to the OS handler.
+- **Open dashboard**: opens the selected sidecar's configured `dashboardUrl` in your default browser via the OS handler. For Joplin-sidecar-style CLIs that expose an `open` subcommand, opt the entry into `useSidecarOpener` and the launcher will instead run `<command> … open --port <port>` so the sidecar can hand the token off via the URL fragment.
 - **Log capture**: captures stdout/stderr into a rolling in-memory buffer (configurable size). The log area is collapsed by default and grows to fill the panel when expanded.
 - **Stop/Restart**: sends SIGTERM to the whole process group gracefully; restart waits up to 3 s then SIGKILL if the process hasn't exited.
 - **Stale-port reclaim**: before starting, checks whether the sidecar's port (from its `healthUrl`/`dashboardUrl`) is already bound. If a leftover process from a previous session holds it, you're offered a one-click *stop it and continue* — no more manual `lsof … kill`.
@@ -65,7 +65,8 @@ Each object in the array:
 | `args` | no | Arguments as a JSON array, e.g. `["-m", "http.server", "8765"]`. Defaults to `[]`. |
 | `cwd` | no | Absolute path. Defaults to `$HOME`. |
 | `healthUrl` | no | `http://127.0.0.1:PORT/path` endpoint polled for liveness. Localhost + HTTP only. |
-| `dashboardUrl` | no | URL opened by the *Open dashboard* button. For sidecars with an `open` subcommand (detected by a `serve` arg), the launcher runs that subcommand so the token is handed off via the URL fragment, and the port from this URL tells the opener which sidecar to talk to. Other sidecars get this URL opened as-is via your OS handler. |
+| `dashboardUrl` | no | URL opened by the *Open dashboard* button via your OS handler. When `useSidecarOpener` is true the URL is not opened directly — instead its port is passed to the CLI's `open` subcommand. |
+| `useSidecarOpener` | no | Opt-in for Joplin-sidecar-style CLIs that expose an `open` subcommand. When true, *Open dashboard* runs `<command> <prefix-before-serve> open --port <port>` so the sidecar can hand the token off via the URL fragment. Default `false` — leave off for generic `serve` commands (e.g. `npx serve public`, `python -m http.server`) that don't have a matching `open`. |
 | `autostart` | no | Start this sidecar automatically on plugin load. Defaults to `false`. |
 | `stopOnUnload` | no | SIGTERM this sidecar when Joplin quits. Defaults to `true`. |
 | `healthIntervalSeconds` | no | Health poll interval, 1–300. Defaults to `5`. |
@@ -96,6 +97,7 @@ in plaintext (it lives in the OS keychain).
     "cwd": "/Users/you/pkm-sidecar",
     "healthUrl": "http://127.0.0.1:8766/health",
     "dashboardUrl": "http://127.0.0.1:8766/",
+    "useSidecarOpener": true,
     "autostart": true,
     "stopOnUnload": true
   }
@@ -174,7 +176,7 @@ to set the JSON; absolute `command` paths (run `which python3`).
 4. **Stop when already stopped** — click Stop again. No popup; the result line beneath the buttons reads *Sidecar is not running.*
 5. **Restart** — start the server, then click Restart. Old PID disappears, new PID appears.
 6. **Multi-sidecar** — define two sidecars on different ports. Use the dropdown to switch. Start sidecar A, switch to B, start B. Both run independently; the panel reflects whichever is selected. PIDs differ.
-7. **Per-sidecar dashboard** — set `dashboardUrl` to `http://127.0.0.1:8765/`. Click *Open dashboard*. For a sidecar with an `open` subcommand (a `serve` arg) the launcher runs `<command> … open --port 8765` so the dashboard URL the browser receives carries the token in its fragment; for a generic sidecar the OS handler opens the URL as-is. With no `dashboardUrl` and no `serve` arg, the result line warns instead of opening.
+7. **Per-sidecar dashboard** — set `dashboardUrl` to `http://127.0.0.1:8765/`. Click *Open dashboard*. The OS handler opens the URL as-is. Then flip `useSidecarOpener` to `true` on a Joplin-sidecar-style entry and click again: the launcher runs `<command> … open --port 8765` instead, and the browser receives the dashboard URL with the token in its fragment. With no `dashboardUrl` (and `useSidecarOpener` off or the entry missing a `serve` arg) the result line warns instead of opening.
 8. **Crash detection** — a sidecar running `python3 -c "import time; time.sleep(2)"`. Wait 3 s. State flips to `crashed`; log shows unexpected exit.
 9. **Bad command** — command `/nonexistent/binary`. Click Start. A dialog explains the blocking preflight failure; the result line points to it.
 10. **Bad JSON** — make the Sidecars JSON invalid in the editor and Save. A parse-error dialog appears and nothing is saved.

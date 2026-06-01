@@ -50,17 +50,21 @@ function portOf(url: string | undefined): string | null {
 }
 
 /**
- * Open the sidecar dashboard. When the entry exposes an `open` subcommand
- * (detected by a `serve` arg, the Joplin-sidecar convention), invoke it so the
- * sidecar can read its ephemeral token file and hand the token off via the
- * dashboard URL fragment — without this round-trip the browser loads the
- * dashboard unauthenticated. Sidecars that don't follow that convention fall
- * back to the OS URL handler on `dashboardUrl`.
+ * Open the sidecar dashboard. When the entry opts into `useSidecarOpener`
+ * (and the CLI has a `serve` arg whose prefix we can swap for `open`), invoke
+ * the sidecar's own `open` subcommand so it can read its ephemeral token file
+ * and hand the token off via the dashboard URL fragment. Without that opt-in
+ * fall back to opening `dashboardUrl` via the OS handler — a `serve` arg alone
+ * doesn't imply an `open` subcommand (e.g. `npx serve public`).
  */
 export function openDashboard(entry: SidecarEntry): Promise<{ ok: boolean; message: string }> {
-  const serveIdx = entry.command ? entry.args.indexOf('serve') : -1;
-  if (serveIdx >= 0) {
-    return openViaSidecarOpener(entry, serveIdx);
+  if (entry.useSidecarOpener && entry.command) {
+    const serveIdx = entry.args.indexOf('serve');
+    if (serveIdx >= 0) {
+      return openViaSidecarOpener(entry, serveIdx);
+    }
+    // Opted in but we can't locate the serve arg to derive the prefix; fall through
+    // to the OS handler rather than guess at the opener invocation.
   }
   if (!entry.dashboardUrl) {
     return Promise.resolve({ ok: false, message: 'No dashboard URL configured for this sidecar.' });
