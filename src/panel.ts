@@ -150,11 +150,11 @@ function buildHtml(model: PanelModel | null): string {
 
   return `
 <style>
-  html, body { height:100%; margin:0; padding:0; overflow:hidden }
-  body { box-sizing:border-box }
+  html, body { height:100%; margin:0; padding:0 }
+  body { overflow-y:auto; overflow-x:hidden; box-sizing:border-box }
   *, *::before, *::after { box-sizing:border-box }
 </style>
-<div style="height:100%;box-sizing:border-box;padding:12px;font-family:sans-serif;font-size:13px;line-height:1.5;display:flex;flex-direction:column;min-height:0">
+<div style="min-height:100%;box-sizing:border-box;padding:12px;font-family:sans-serif;font-size:13px;line-height:1.5;display:flex;flex-direction:column">
   <h3 style="margin:0 0 8px;font-size:15px;flex:0 0 auto">Sidecar Launcher</h3>
 
   <div style="flex:0 0 auto">
