@@ -103,9 +103,9 @@ sidecar; `uv run` resolves the project's own virtual environment.
 
 If you previously configured a single sidecar via the flat Command/Arguments/etc.
 fields, those are **migrated automatically** into the Sidecars JSON the first time
-0.2.0 loads — you'll see a one-element array named `Sidecar`. The legacy fields
-remain in the settings UI (relabelled *legacy*) but are no longer read; you can
-ignore or clear them.
+0.2.0 loads — you'll see a one-element array named `Sidecar`. The old single-sidecar
+fields are then hidden from the settings page (they're retained internally only so
+the one-time migration can read them).
 
 ---
 

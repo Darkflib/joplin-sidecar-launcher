@@ -29,6 +29,21 @@ function escHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/**
+ * Render a value as a single-quoted JS string literal safe to embed inside a
+ * double-quoted HTML attribute (e.g. an onclick handler). Escapes JS string
+ * metacharacters, then HTML-escapes so a stray quote can't break out of the
+ * attribute.
+ */
+function jsStringLiteralAttr(value: string): string {
+  const js = `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+  return js
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function stateColour(state: string): string {
   switch (state) {
     case 'healthy': return '#4caf50';
@@ -95,8 +110,11 @@ function buildHtml(model: PanelModel | null): string {
   const { state, pid, startedAt, exitedAt, exitCode, signal, health, lastHealthAt, lastHealthError, recentLogs } = status;
   const stateColor = stateColour(state);
 
-  // Per-button posts carry the selected id so menu and panel actions agree.
-  const sel = JSON.stringify(selectedId);
+  // Per-button posts carry the selected id so menu and panel actions agree. The id
+  // is a single-quoted JS string literal (the onclick attribute is double-quoted),
+  // then HTML-escaped — embedding it via JSON.stringify produced a double quote that
+  // closed the attribute and silently broke every button.
+  const sel = jsStringLiteralAttr(selectedId);
   const btn = (label: string, type: string) =>
     `<button onclick="webviewApi.postMessage({type:'${type}',id:${sel}})" style="margin:2px 4px 2px 0;padding:4px 10px;cursor:pointer">${label}</button>`;
 
