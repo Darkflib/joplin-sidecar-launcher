@@ -36,15 +36,15 @@ function clampInt(value: unknown, fallback: number, min: number, max: number): n
 }
 
 function boolSelect(name: string, current: boolean): string {
-  return `<select name="${name}" style="padding:3px 6px">
+  return `<select name="${name}" style="padding:5px 7px;font-size:14px">
       <option value="true"${current ? ' selected' : ''}>Yes</option>
       <option value="false"${!current ? ' selected' : ''}>No</option>
     </select>`;
 }
 
-const FIELD = 'display:block;margin:8px 0 12px;font-size:13px';
-const INPUT = 'width:100%;box-sizing:border-box;padding:4px 6px;font-size:13px';
-const HINT = 'color:#888;font-size:11px';
+const FIELD = 'display:block;margin:10px 0 16px;font-size:14px';
+const INPUT = 'width:100%;box-sizing:border-box;padding:6px 9px;font-size:14px;margin-top:4px';
+const HINT = 'color:#888;font-size:12px';
 
 export function sidecarFormHtml(existing: Raw | null): string {
   const argsText = Array.isArray(existing?.args)
@@ -56,8 +56,8 @@ export function sidecarFormHtml(existing: Raw | null): string {
   const maxLog = num(existing, 'maxLogLines', 100);
   const title = existing ? 'Edit sidecar' : 'Add sidecar';
 
-  return `<form name="main" style="min-width:460px;max-width:560px">
-    <h3 style="margin:0 0 8px">${title}</h3>
+  return `<form name="main" style="width:640px;max-width:100%;font-size:14px;line-height:1.4">
+    <h3 style="margin:0 0 14px;font-size:17px">${title}</h3>
 
     <label style="${FIELD}">Name
       <input name="name" value="${attr(str(existing, 'name'))}" placeholder="My sidecar" style="${INPUT}">
@@ -68,7 +68,7 @@ export function sidecarFormHtml(existing: Raw | null): string {
     </label>
 
     <label style="${FIELD}">Arguments <span style="${HINT}">— one per line</span>
-      <textarea name="args" rows="5" placeholder="-m&#10;http.server&#10;8765" style="${INPUT};font-family:monospace">${text(argsText)}</textarea>
+      <textarea name="args" rows="6" placeholder="-m&#10;http.server&#10;8765" style="${INPUT};font-family:monospace">${text(argsText)}</textarea>
     </label>
 
     <label style="${FIELD}">Working directory <span style="${HINT}">— optional, defaults to home</span>
@@ -83,17 +83,17 @@ export function sidecarFormHtml(existing: Raw | null): string {
       <input name="dashboardUrl" value="${attr(str(existing, 'dashboardUrl'))}" placeholder="http://127.0.0.1:8765/" style="${INPUT}">
     </label>
 
-    <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin:8px 0 12px;font-size:13px">
+    <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center;margin:10px 0 14px;font-size:14px">
       <label>Autostart ${boolSelect('autostart', autostart)}</label>
       <label>Stop on unload ${boolSelect('stopOnUnload', stopOnUnload)}</label>
     </div>
 
-    <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-size:13px">
+    <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center;font-size:14px">
       <label>Health interval (s)
-        <input type="number" name="healthIntervalSeconds" min="1" max="300" value="${interval}" style="width:70px;padding:3px 6px">
+        <input type="number" name="healthIntervalSeconds" min="1" max="300" value="${interval}" style="width:80px;padding:5px 7px;font-size:14px">
       </label>
       <label>Max log lines
-        <input type="number" name="maxLogLines" min="10" max="1000" value="${maxLog}" style="width:80px;padding:3px 6px">
+        <input type="number" name="maxLogLines" min="10" max="1000" value="${maxLog}" style="width:90px;padding:5px 7px;font-size:14px">
       </label>
     </div>
   </form>`;
