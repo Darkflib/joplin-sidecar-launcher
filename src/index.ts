@@ -10,7 +10,7 @@ import { authoriseJoplinToken } from './joplinAuth';
 import { sidecarPort, isPortInUse, findListenerPids, killPids } from './portCheck';
 import { SidecarEntry, SidecarStatus, EntryError, ResultLine } from './types';
 
-const PLUGIN_VERSION = '0.3.0';
+const PLUGIN_VERSION = '0.3.1';
 
 function asId(v: unknown): string | undefined {
   return typeof v === 'string' && v ? v : undefined;
