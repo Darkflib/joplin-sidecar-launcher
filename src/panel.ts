@@ -72,7 +72,7 @@ function renderLogs(logs: SidecarStatus['recentLogs']): string {
     .map(l => {
       const ts = l.timestamp.slice(11, 23);
       const colour = l.stream === 'stderr' ? '#f44336' : '#aaa';
-      return `<div style="font-family:monospace;font-size:11px;margin:1px 0"><span style="color:#555">${escHtml(ts)}</span> <span style="color:${colour}">[${l.stream}]</span> ${escHtml(l.line)}</div>`;
+      return `<div style="font-family:monospace;font-size:11px;margin:1px 0;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word"><span style="color:#555">${escHtml(ts)}</span> <span style="color:${colour}">[${l.stream}]</span> ${escHtml(l.line)}</div>`;
     })
     .join('');
 }
@@ -149,7 +149,12 @@ function buildHtml(model: PanelModel | null): string {
     : 'max-height:160px;overflow-y:auto;background:#111;border-radius:3px;padding:6px;margin-top:4px';
 
   return `
-<div style="height:100vh;box-sizing:border-box;padding:12px;font-family:sans-serif;font-size:13px;line-height:1.5;display:flex;flex-direction:column">
+<style>
+  html, body { height:100%; margin:0; padding:0 }
+  body { overflow-y:auto; overflow-x:hidden; box-sizing:border-box }
+  *, *::before, *::after { box-sizing:border-box }
+</style>
+<div style="min-height:100%;box-sizing:border-box;padding:12px;font-family:sans-serif;font-size:13px;line-height:1.5;display:flex;flex-direction:column">
   <h3 style="margin:0 0 8px;font-size:15px;flex:0 0 auto">Sidecar Launcher</h3>
 
   <div style="flex:0 0 auto">
