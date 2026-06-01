@@ -13,6 +13,7 @@ const CONFIGS_EXAMPLE = JSON.stringify(
       cwd: '/Users/you/pkm-sidecar',
       healthUrl: 'http://127.0.0.1:8765/health',
       dashboardUrl: 'http://127.0.0.1:8765/',
+      useSidecarOpener: true,
       autostart: true,
       stopOnUnload: true,
       healthIntervalSeconds: 5,
@@ -39,8 +40,8 @@ export async function registerSettings(): Promise<void> {
       label: 'Sidecars (JSON array)',
       description:
         'A JSON array of sidecar definitions. Each object: { name, command (absolute path), ' +
-        'args (array), cwd?, healthUrl?, dashboardUrl?, autostart?, stopOnUnload?, ' +
-        'healthIntervalSeconds?, maxLogLines? }. Prefer the "Edit Sidecars (JSON)" command ' +
+        'args (array), cwd?, healthUrl?, dashboardUrl?, useSidecarOpener?, autostart?, ' +
+        'stopOnUnload?, healthIntervalSeconds?, maxLogLines? }. Prefer the "Edit Sidecars (JSON)" command ' +
         `for a larger editor. Example: ${CONFIGS_EXAMPLE}`,
       public: true,
     },
@@ -255,6 +256,8 @@ function normaliseEntry(
     push(`Dashboard URL must be an http(s) URL. Got: ${dashboardUrl}`);
   }
 
+  const useSidecarOpener = obj.useSidecarOpener === true;
+
   const autostart = obj.autostart === true;
   const stopOnUnload = obj.stopOnUnload !== false; // default true
   const healthIntervalSeconds = clampInt(obj.healthIntervalSeconds, 5, 1, 300);
@@ -269,6 +272,7 @@ function normaliseEntry(
       cwd,
       healthUrl,
       dashboardUrl,
+      useSidecarOpener,
       autostart,
       stopOnUnload,
       healthIntervalSeconds,
@@ -303,6 +307,9 @@ async function migrateLegacy(): Promise<Record<string, unknown> | null> {
     name: 'Sidecar',
     command,
     args,
+    // The legacy single-sidecar config only ever pointed at the Joplin sidecar
+    // CLI, which exposes `open`; preserve its token handoff across the upgrade.
+    useSidecarOpener: true,
     autostart: (await joplin.settings.value('sidecar.autostart')) as boolean,
     stopOnUnload: (await joplin.settings.value('sidecar.stopOnUnload')) as boolean,
     healthIntervalSeconds: (await joplin.settings.value('sidecar.healthIntervalSeconds')) as number,

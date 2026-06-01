@@ -52,6 +52,7 @@ export function sidecarFormHtml(existing: Raw | null): string {
     : '';
   const autostart = existing?.autostart === true;
   const stopOnUnload = existing ? existing.stopOnUnload !== false : true;
+  const useSidecarOpener = existing?.useSidecarOpener === true;
   const interval = num(existing, 'healthIntervalSeconds', 5);
   const maxLog = num(existing, 'maxLogLines', 100);
   const title = existing ? 'Edit sidecar' : 'Add sidecar';
@@ -82,6 +83,11 @@ export function sidecarFormHtml(existing: Raw | null): string {
     <label style="${FIELD}">Dashboard URL <span style="${HINT}">— optional, opened by "Open dashboard"</span>
       <input name="dashboardUrl" value="${attr(str(existing, 'dashboardUrl'))}" placeholder="http://127.0.0.1:8765/" style="${INPUT}">
     </label>
+
+    <div style="${FIELD}">
+      <label>Use sidecar's <code>open</code> subcommand ${boolSelect('useSidecarOpener', useSidecarOpener)}</label>
+      <div style="${HINT};margin-top:4px">Only for Joplin-sidecar-style CLIs that expose <code>open</code> (token handoff via URL fragment). Leave off for generic <code>serve</code> commands.</div>
+    </div>
 
     <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center;margin:10px 0 14px;font-size:14px">
       <label>Autostart ${boolSelect('autostart', autostart)}</label>
@@ -129,6 +135,7 @@ export function parseSidecarForm(
   const dashboardUrl = get('dashboardUrl');
   if (dashboardUrl) value.dashboardUrl = dashboardUrl;
 
+  value.useSidecarOpener = get('useSidecarOpener') === 'true';
   value.autostart = get('autostart') === 'true';
   value.stopOnUnload = get('stopOnUnload') !== 'false';
   value.healthIntervalSeconds = clampInt(f.healthIntervalSeconds, 5, 1, 300);
