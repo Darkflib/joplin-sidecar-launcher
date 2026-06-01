@@ -119,7 +119,7 @@ function buildHtml(model: PanelModel | null): string {
     `<button onclick="webviewApi.postMessage({type:'${type}',id:${sel}})" style="margin:2px 4px 2px 0;padding:4px 10px;cursor:pointer">${label}</button>`;
 
   const selector = sidecars.length === 0
-    ? `<div style="color:#f44336;font-size:12px;margin-bottom:8px">No sidecars configured. Use <strong>Edit sidecars</strong> below.</div>`
+    ? `<div style="color:#f44336;font-size:12px;margin-bottom:8px">No sidecars configured. Click <strong>Add</strong> below to create one.</div>`
     : sidecars.length === 1
       ? `<div style="color:#777;font-size:12px;margin-bottom:8px">Sidecar: <strong style="color:inherit">${escHtml(sidecars[0].name)}</strong></div>`
       : `<div style="margin-bottom:8px">
@@ -172,15 +172,24 @@ function buildHtml(model: PanelModel | null): string {
           <td>${exitCode != null ? exitCode : '—'}${signal ? ` (signal: ${escHtml(signal)})` : ''}</td></tr>
     </table>
 
-    <div>
+    <div style="margin-bottom:4px">
       ${btn('Start', 'start')}
       ${btn('Stop', 'stop')}
       ${btn('Restart', 'restart')}
       ${btn('Open dashboard', 'openDashboard')}
+    </div>
+    <div style="margin-bottom:4px">
+      <span style="color:#777;font-size:11px;margin-right:4px">Manage:</span>
+      ${btn('Add', 'addSidecar')}
+      ${btn('Edit', 'editSidecar')}
+      ${btn('Duplicate', 'duplicateSidecar')}
+      ${btn('Remove', 'removeSidecar')}
+    </div>
+    <div>
       ${btn('Preflight', 'preflight')}
       ${btn('Authorise Joplin', 'authoriseJoplin')}
-      ${btn('Edit sidecars', 'editConfigs')}
       ${btn('Copy diag', 'copyDiagnostics')}
+      ${btn('Edit JSON', 'editConfigs')}
     </div>
 
     ${resultLine}
