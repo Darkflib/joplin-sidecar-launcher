@@ -65,7 +65,7 @@ Each object in the array:
 | `args` | no | Arguments as a JSON array, e.g. `["-m", "http.server", "8765"]`. Defaults to `[]`. |
 | `cwd` | no | Absolute path. Defaults to `$HOME`. |
 | `healthUrl` | no | `http://127.0.0.1:PORT/path` endpoint polled for liveness. Localhost + HTTP only. |
-| `dashboardUrl` | no | URL opened by the *Open dashboard* button via your OS handler. |
+| `dashboardUrl` | no | URL opened by the *Open dashboard* button. For sidecars with an `open` subcommand (detected by a `serve` arg), the launcher runs that subcommand so the token is handed off via the URL fragment, and the port from this URL tells the opener which sidecar to talk to. Other sidecars get this URL opened as-is via your OS handler. |
 | `autostart` | no | Start this sidecar automatically on plugin load. Defaults to `false`. |
 | `stopOnUnload` | no | SIGTERM this sidecar when Joplin quits. Defaults to `true`. |
 | `healthIntervalSeconds` | no | Health poll interval, 1–300. Defaults to `5`. |
@@ -174,7 +174,7 @@ to set the JSON; absolute `command` paths (run `which python3`).
 4. **Stop when already stopped** — click Stop again. No popup; the result line beneath the buttons reads *Sidecar is not running.*
 5. **Restart** — start the server, then click Restart. Old PID disappears, new PID appears.
 6. **Multi-sidecar** — define two sidecars on different ports. Use the dropdown to switch. Start sidecar A, switch to B, start B. Both run independently; the panel reflects whichever is selected. PIDs differ.
-7. **Per-sidecar dashboard** — set `dashboardUrl` to `http://127.0.0.1:8765/`. Click *Open dashboard*. Browser opens that URL. With no `dashboardUrl`, the result line warns instead of opening.
+7. **Per-sidecar dashboard** — set `dashboardUrl` to `http://127.0.0.1:8765/`. Click *Open dashboard*. For a sidecar with an `open` subcommand (a `serve` arg) the launcher runs `<command> … open --port 8765` so the dashboard URL the browser receives carries the token in its fragment; for a generic sidecar the OS handler opens the URL as-is. With no `dashboardUrl` and no `serve` arg, the result line warns instead of opening.
 8. **Crash detection** — a sidecar running `python3 -c "import time; time.sleep(2)"`. Wait 3 s. State flips to `crashed`; log shows unexpected exit.
 9. **Bad command** — command `/nonexistent/binary`. Click Start. A dialog explains the blocking preflight failure; the result line points to it.
 10. **Bad JSON** — make the Sidecars JSON invalid in the editor and Save. A parse-error dialog appears and nothing is saved.
