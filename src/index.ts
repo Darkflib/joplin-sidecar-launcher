@@ -6,6 +6,7 @@ import { createPanel, updatePanel, togglePanel, PanelMessage } from './panel';
 import { copyDiagnostics } from './diagnostics';
 import { runPreflight, hasErrors, formatPreflight } from './preflight';
 import { authoriseJoplinToken } from './joplinAuth';
+import { sidecarPort, isPortInUse, findListenerPids, killPids } from './portCheck';
 import { SidecarEntry, SidecarStatus, EntryError, ResultLine } from './types';
 
 const PLUGIN_VERSION = '0.2.0';
@@ -124,6 +125,44 @@ joplin.plugins.register({
       return parts.length ? parts.join('\n\n') : null;
     }
 
+    // Detect a stale process holding the sidecar's port (e.g. an orphan from a
+    // hard-killed Joplin) and offer to reclaim it. Returns a ResultLine if the
+    // start should be aborted, or null when it's clear to proceed.
+    async function ensurePortFree(entry: SidecarEntry): Promise<ResultLine | null> {
+      // If our own pool already runs this sidecar, let start() reject it — don't
+      // probe the port (we'd be looking at our own process).
+      if (pool.isRunning(entry.id)) return null;
+      const port = sidecarPort(entry);
+      if (port == null) return null;
+      if (!(await isPortInUse(port))) return null;
+
+      const pids = findListenerPids(port);
+      const who = pids.length ? ` by PID ${pids.join(', ')}` : '';
+      const answer = await joplin.views.dialogs.showMessageBox(
+        `Port ${port} is already in use${who}.\n\n` +
+          `This is usually a leftover "${entry.name}" sidecar from a previous session. ` +
+          `Click OK to stop it and continue, or Cancel to abort.`,
+      );
+      if (answer !== 0) {
+        return { level: 'warn', message: `Start aborted — port ${port} is in use.` };
+      }
+      if (!pids.length) {
+        return {
+          level: 'error',
+          message: `Couldn't identify the process on port ${port}. Free it manually, then retry.`,
+        };
+      }
+      killPids(pids);
+      await new Promise((r) => setTimeout(r, 600));
+      if (await isPortInUse(port)) {
+        return {
+          level: 'error',
+          message: `Port ${port} is still in use after trying to free it. Free it manually, then retry.`,
+        };
+      }
+      return null; // port freed — proceed; the start's own result line follows
+    }
+
     // --- Commands. Each returns a ResultLine the panel shows inline (or null). ---
 
     await joplin.commands.register({
@@ -139,6 +178,8 @@ joplin.plugins.register({
           );
           return { level: 'error', message: `Cannot start "${entry.name}" — see dialog.` };
         }
+        const portIssue = await ensurePortFree(entry);
+        if (portIssue) return portIssue;
         const result = await pool.start(entry.id, entry);
         return { level: result.ok ? 'info' : 'error', message: result.message };
       },
@@ -169,6 +210,8 @@ joplin.plugins.register({
           );
           return { level: 'error', message: `Cannot restart "${entry.name}" — see dialog.` };
         }
+        const portIssue = await ensurePortFree(entry);
+        if (portIssue) return portIssue;
         const result = await pool.restart(entry.id, entry);
         return { level: result.ok ? 'info' : 'error', message: result.message };
       },
@@ -315,8 +358,14 @@ joplin.plugins.register({
         );
         continue;
       }
+      const portIssue = await ensurePortFree(entry);
+      if (portIssue) {
+        lastResult = portIssue;
+        continue; // port busy and not reclaimed — skip this autostart
+      }
       await pool.start(entry.id, entry);
     }
+    await updatePanel(buildPanelModel());
 
     // Stop on unload: stop every sidecar whose config opts in (default), plus any
     // orphans the pool still holds. Leave sidecars with stopOnUnload:false running.

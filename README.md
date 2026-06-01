@@ -23,7 +23,8 @@ A Joplin desktop plugin that launches, monitors, and stops local sidecar process
 - **Health polling**: optionally hits a localhost HTTP endpoint on a configurable interval and reflects the result in the panel.
 - **Open dashboard**: opens the selected sidecar's configured `dashboardUrl` in your default browser via the OS handler.
 - **Log capture**: captures stdout/stderr into a rolling in-memory buffer (configurable size). The log area is collapsed by default and grows to fill the panel when expanded.
-- **Stop/Restart**: sends SIGTERM gracefully; restart waits up to 3 s then SIGKILL if the process hasn't exited.
+- **Stop/Restart**: sends SIGTERM to the whole process group gracefully; restart waits up to 3 s then SIGKILL if the process hasn't exited.
+- **Stale-port reclaim**: before starting, checks whether the sidecar's port (from its `healthUrl`/`dashboardUrl`) is already bound. If a leftover process from a previous session holds it, you're offered a one-click *stop it and continue* — no more manual `lsof … kill`.
 - **Inline results, not alert spam**: button actions report their outcome on a line beneath the buttons. Benign no-ops (e.g. *Stop* when already stopped) just show a message — no popup. Popups remain only where the action is blocked and needs guidance (failed preflight before *Start*) or is an explicit flow (preflight report, Joplin auth, the JSON editor).
 - **Diagnostics**: one-click clipboard dump of the selected sidecar's config, status, and recent log lines — useful for bug reports.
 - **Status panel**: a side panel showing live state, PID, health, timestamps, and log output with Start/Stop/Restart/Open-dashboard/Edit/Copy-diag buttons.
@@ -172,11 +173,12 @@ to set the JSON; absolute `command` paths (run `which python3`).
 10. **Bad JSON** — make the Sidecars JSON invalid in the editor and Save. A parse-error dialog appears and nothing is saved.
 11. **Remote health URL rejected** — set `healthUrl` to `https://example.com`. Start is blocked with a validation explanation.
 12. **Autostart** — set `autostart: true` on one sidecar, reload the plugin. It starts without clicking Start; a sidecar with `autostart: false` does not.
-13. **Stop on unload** — start a sidecar with `stopOnUnload: true`, quit Joplin. Verify no zombie process remains (`pgrep -a python3`). A sidecar with `stopOnUnload: false` survives.
-14. **Diagnostics** — select a sidecar, click *Copy diag*, paste. Verify the report is for the selected sidecar and all fields are populated.
-15. **Collapsible logs** — the log section is collapsed on load. Expand it; it grows to fill the panel. It stays expanded across status updates.
-16. **Panel toggle** — *Tools → Sidecar Launcher → Show/Hide Status Panel*. Panel hides and shows correctly.
-17. **Max log lines** — set `maxLogLines: 10`, generate >10 lines. Only 10 are retained (check via diagnostics).
+13. **Stop on unload** — start a sidecar with `stopOnUnload: true`, quit Joplin. Verify no zombie process remains (`pgrep -a python3`). A sidecar with `stopOnUnload: false` survives. Use a wrapper (`uv run … uvicorn`) to confirm the *grandchild* dies too, not just the wrapper.
+14. **Stale-port reclaim** — leave a process bound to the sidecar's port (e.g. `python3 -m http.server 8765 --bind 127.0.0.1` in a terminal), then click Start. A dialog reports the port is in use (with the PID). OK kills it and starts; Cancel aborts with an inline warning and no popup spam.
+15. **Diagnostics** — select a sidecar, click *Copy diag*, paste. Verify the report is for the selected sidecar and all fields are populated.
+16. **Collapsible logs** — the log section is collapsed on load. Expand it; it grows to fill the panel. It stays expanded across status updates.
+17. **Panel toggle** — *Tools → Sidecar Launcher → Show/Hide Status Panel*. Panel hides and shows correctly.
+18. **Max log lines** — set `maxLogLines: 10`, generate >10 lines. Only 10 are retained (check via diagnostics).
 
 ---
 
