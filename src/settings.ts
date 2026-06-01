@@ -330,7 +330,7 @@ function directoryExists(dir: string): boolean {
 }
 
 let idCounter = 0;
-function newId(): string {
+export function newId(): string {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const crypto = require('crypto') as typeof import('crypto');
