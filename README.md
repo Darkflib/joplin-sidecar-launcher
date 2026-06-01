@@ -21,7 +21,7 @@ A Joplin desktop plugin that launches, monitors, and stops local sidecar process
 - **Launch** a configurable command with arguments and working directory when you click *Start* (or automatically on plugin load, per sidecar).
 - **Monitor** each process: tracks state (`stopped`, `starting`, `running`, `healthy`, `unhealthy`, `stopping`, `crashed`), PID, start/exit times, and exit code.
 - **Health polling**: optionally hits a localhost HTTP endpoint on a configurable interval and reflects the result in the panel.
-- **Open dashboard**: opens the selected sidecar's configured `dashboardUrl` in your default browser via the OS handler.
+- **Open dashboard**: opens the selected sidecar's configured `dashboardUrl` in your default browser. When the sidecar exposes an `open` subcommand (detected by a `serve` arg, the Joplin-sidecar convention), the launcher invokes it so the sidecar can hand the token off via the URL fragment; otherwise it falls back to the OS handler.
 - **Log capture**: captures stdout/stderr into a rolling in-memory buffer (configurable size). The log area is collapsed by default and grows to fill the panel when expanded.
 - **Stop/Restart**: sends SIGTERM to the whole process group gracefully; restart waits up to 3 s then SIGKILL if the process hasn't exited.
 - **Stale-port reclaim**: before starting, checks whether the sidecar's port (from its `healthUrl`/`dashboardUrl`) is already bound. If a leftover process from a previous session holds it, you're offered a one-click *stop it and continue* — no more manual `lsof … kill`.

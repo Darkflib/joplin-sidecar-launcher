@@ -38,17 +38,66 @@ function osOpenCommand(url: string): { cmd: string; args: string[] } {
   }
 }
 
+/** Explicit port of an http(s) URL, or null if absent / unparsable. */
+function portOf(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    const p = new URL(url).port;
+    return p || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Open the sidecar's configured dashboard URL in the default browser via the OS
- * URL handler. Generic — works for any sidecar that exposes a web UI, not just
- * ones with a bespoke `open` subcommand.
+ * Open the sidecar dashboard. When the entry exposes an `open` subcommand
+ * (detected by a `serve` arg, the Joplin-sidecar convention), invoke it so the
+ * sidecar can read its ephemeral token file and hand the token off via the
+ * dashboard URL fragment — without this round-trip the browser loads the
+ * dashboard unauthenticated. Sidecars that don't follow that convention fall
+ * back to the OS URL handler on `dashboardUrl`.
  */
 export function openDashboard(entry: SidecarEntry): Promise<{ ok: boolean; message: string }> {
+  const serveIdx = entry.command ? entry.args.indexOf('serve') : -1;
+  if (serveIdx >= 0) {
+    return openViaSidecarOpener(entry, serveIdx);
+  }
   if (!entry.dashboardUrl) {
     return Promise.resolve({ ok: false, message: 'No dashboard URL configured for this sidecar.' });
   }
-  const url = entry.dashboardUrl;
-  const { cmd, args } = osOpenCommand(url);
+  const { cmd, args } = osOpenCommand(entry.dashboardUrl);
+  return spawnOpener(cmd, args, undefined, undefined, `Opening ${entry.dashboardUrl} …`);
+}
+
+/**
+ * Run `<command> <prefix> open --port <port>` in the same environment the
+ * `serve` process gets (so JOPLIN_TOKEN etc. are available to the opener). The
+ * port lets the sidecar locate the right ephemeral token file when more than
+ * one instance is running.
+ */
+function openViaSidecarOpener(
+  entry: SidecarEntry,
+  serveIdx: number,
+): Promise<{ ok: boolean; message: string }> {
+  const port = portOf(entry.dashboardUrl) ?? portOf(entry.healthUrl) ?? '8765';
+  const prefix = entry.args.slice(0, serveIdx);
+  const openArgs = [...prefix, 'open', '--port', port];
+  return spawnOpener(
+    entry.command,
+    openArgs,
+    entry.cwd || process.env.HOME || undefined,
+    buildChildEnv(entry),
+    `Opening dashboard at http://127.0.0.1:${port}/ …`,
+  );
+}
+
+function spawnOpener(
+  cmd: string,
+  args: string[],
+  cwd: string | undefined,
+  env: Record<string, string> | undefined,
+  successMessage: string,
+): Promise<{ ok: boolean; message: string }> {
   return new Promise((resolve) => {
     let settled = false;
     const done = (r: { ok: boolean; message: string }) => {
@@ -60,7 +109,7 @@ export function openDashboard(entry: SidecarEntry): Promise<{ ok: boolean; messa
 
     let child: ChildProcess;
     try {
-      child = spawn(cmd, args, { stdio: 'ignore', detached: true });
+      child = spawn(cmd, args, { cwd, env, shell: false, stdio: 'ignore', detached: true });
     } catch (e: unknown) {
       done({ ok: false, message: `Failed to open dashboard: ${(e as Error).message}` });
       return;
@@ -73,7 +122,7 @@ export function openDashboard(entry: SidecarEntry): Promise<{ ok: boolean; messa
     });
     child.once('spawn', () => {
       child.unref();
-      done({ ok: true, message: `Opening ${url} …` });
+      done({ ok: true, message: successMessage });
     });
   });
 }

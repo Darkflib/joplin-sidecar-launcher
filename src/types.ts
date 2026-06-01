@@ -25,8 +25,9 @@ export interface LogLine {
  * A single managed sidecar. `id` is a stable opaque key used to route status
  * updates and remember the panel selection; `name` is the human label shown in
  * the panel selector. The remaining fields mirror the original single-sidecar
- * config. `dashboardUrl` is an optional browser URL opened by the OS handler —
- * generic, so it works for any sidecar, not just ones with an `open` subcommand.
+ * config. `dashboardUrl` is the browser URL opened by the *Open dashboard*
+ * action — used directly via the OS handler for generic sidecars, or as the
+ * port source for sidecars that expose an `open` subcommand (token handoff).
  */
 export interface SidecarEntry {
   id: string;
