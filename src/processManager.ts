@@ -280,6 +280,15 @@ export class ProcessManager {
     return this.state === 'running' || this.state === 'healthy' || this.state === 'unhealthy';
   }
 
+  /**
+   * True while a child process exists — including 'starting' and 'stopping'
+   * states that isRunning() excludes. Used by the unload backstop so a process
+   * that ignores/delays SIGTERM is still force-killed.
+   */
+  isAlive(): boolean {
+    return this.child != null;
+  }
+
   private setState(state: SidecarState): void {
     this.state = state;
     this.onStatusChange(this.getStatus());
@@ -376,31 +385,35 @@ export class ManagerPool {
     return this.managers.get(id)?.isRunning() ?? false;
   }
 
-  /** True if any managed sidecar is currently running. */
-  anyRunning(): boolean {
+  /** True if any managed sidecar still has a live child process. */
+  anyAlive(): boolean {
     for (const m of this.managers.values()) {
-      if (m.isRunning()) return true;
+      if (m.isAlive()) return true;
     }
     return false;
   }
 
   /**
-   * Stop running sidecars. With no predicate, stops all; otherwise stops only
-   * those whose id satisfies `shouldStop` (used on unload to honour each entry's
-   * stopOnUnload flag while still cleaning up orphans).
+   * Gracefully stop sidecars with a live child. With no predicate, stops all;
+   * otherwise only those whose id satisfies `shouldStop` (used on unload to
+   * honour each entry's stopOnUnload flag while still cleaning up orphans).
    */
   async stopAll(shouldStop?: (id: string) => boolean): Promise<void> {
     const stops: Promise<unknown>[] = [];
     for (const [id, m] of this.managers.entries()) {
-      if (m.isRunning() && (!shouldStop || shouldStop(id))) stops.push(m.stop());
+      if (m.isAlive() && (!shouldStop || shouldStop(id))) stops.push(m.stop());
     }
     await Promise.all(stops);
   }
 
-  /** SIGKILL any still-running sidecar's process group (used as an unload backstop). */
+  /**
+   * SIGKILL the process group of any sidecar still holding a live child — covers
+   * 'stopping' processes that ignored SIGTERM. forceKill() no-ops when the child
+   * has already exited, so calling it on every match is safe.
+   */
   forceKillAll(shouldStop?: (id: string) => boolean): void {
     for (const [id, m] of this.managers.entries()) {
-      if (m.isRunning() && (!shouldStop || shouldStop(id))) m.forceKill();
+      if (m.isAlive() && (!shouldStop || shouldStop(id))) m.forceKill();
     }
   }
 }

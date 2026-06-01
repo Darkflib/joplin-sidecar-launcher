@@ -9,7 +9,7 @@ import { authoriseJoplinToken } from './joplinAuth';
 import { sidecarPort, isPortInUse, findListenerPids, killPids } from './portCheck';
 import { SidecarEntry, SidecarStatus, EntryError, ResultLine } from './types';
 
-const PLUGIN_VERSION = '0.2.1';
+const PLUGIN_VERSION = '0.2.2';
 
 function asId(v: unknown): string | undefined {
   return typeof v === 'string' && v ? v : undefined;
@@ -373,9 +373,10 @@ joplin.plugins.register({
       const { configs } = await loadConfigs();
       const keepRunning = new Set(configs.filter((c) => !c.stopOnUnload).map((c) => c.id));
       const shouldStop = (id: string) => !keepRunning.has(id);
-      if (pool.anyRunning()) {
+      if (pool.anyAlive()) {
         // SIGTERM the process groups (delivered synchronously, so it lands even if
-        // Joplin doesn't await us), give them a moment, then SIGKILL any survivors.
+        // Joplin doesn't await us), give them a moment, then SIGKILL any survivors
+        // (including ones stuck in 'stopping' that ignored SIGTERM).
         await pool.stopAll(shouldStop);
         await new Promise((r) => setTimeout(r, 800));
         pool.forceKillAll(shouldStop);

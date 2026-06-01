@@ -184,12 +184,25 @@ export async function loadConfigs(): Promise<{ configs: SidecarEntry[]; errors: 
 
   const configs: SidecarEntry[] = [];
   const seenIds = new Set<string>();
+  let idsAssigned = false;
   parsed.forEach((item, index) => {
-    const { entry, entryErrors } = normaliseEntry(item, index, seenIds, joplinBaseUrl, joplinToken);
+    const { entry, entryErrors, generatedId } = normaliseEntry(item, index, seenIds, joplinBaseUrl, joplinToken);
     seenIds.add(entry.id);
     configs.push(entry);
     errors.push(...entryErrors);
+    // Inject the assigned id into the user's original object (only the id — never
+    // the global token) so it can be written back and stay stable across reloads.
+    if (generatedId && item && typeof item === 'object') {
+      (item as Record<string, unknown>).id = entry.id;
+      idsAssigned = true;
+    }
   });
+
+  // Persist newly-assigned ids once. Subsequent loads see ids present and skip
+  // this, so it doesn't loop through the settings onChange handler.
+  if (idsAssigned) {
+    await joplin.settings.setValue('sidecar.configs', JSON.stringify(parsed, null, 2));
+  }
 
   return { configs, errors };
 }
@@ -200,12 +213,18 @@ function normaliseEntry(
   seenIds: Set<string>,
   joplinBaseUrl: string | undefined,
   joplinToken: string | undefined,
-): { entry: SidecarEntry; entryErrors: EntryError[] } {
+): { entry: SidecarEntry; entryErrors: EntryError[]; generatedId: boolean } {
   const errs: EntryError[] = [];
   const obj = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
 
   let id = typeof obj.id === 'string' && obj.id.trim() ? obj.id.trim() : '';
-  if (!id || seenIds.has(id)) id = newId();
+  // Mint a stable id when missing or colliding; the caller persists it so the id
+  // (and thus the process-manager key, selection, and status) survives reloads.
+  let generatedId = false;
+  if (!id || seenIds.has(id)) {
+    id = newId();
+    generatedId = true;
+  }
 
   const name = typeof obj.name === 'string' && obj.name.trim() ? obj.name.trim() : `Sidecar ${index + 1}`;
   const push = (message: string) => errs.push({ id, name, message });
@@ -259,6 +278,7 @@ function normaliseEntry(
       joplinToken,
     },
     entryErrors: errs,
+    generatedId,
   };
 }
 
