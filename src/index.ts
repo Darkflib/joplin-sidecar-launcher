@@ -1,6 +1,7 @@
 import joplin from 'api';
 import { MenuItemLocation } from 'api/types';
-import { registerSettings, loadConfigs } from './settings';
+import { registerSettings, loadConfigs, newId } from './settings';
+import { sidecarFormHtml, parseSidecarForm } from './sidecarForm';
 import { ManagerPool, openDashboard, emptyStatus } from './processManager';
 import { createPanel, updatePanel, togglePanel, PanelMessage } from './panel';
 import { copyDiagnostics } from './diagnostics';
@@ -9,7 +10,7 @@ import { authoriseJoplinToken } from './joplinAuth';
 import { sidecarPort, isPortInUse, findListenerPids, killPids } from './portCheck';
 import { SidecarEntry, SidecarStatus, EntryError, ResultLine } from './types';
 
-const PLUGIN_VERSION = '0.2.3';
+const PLUGIN_VERSION = '0.3.1';
 
 function asId(v: unknown): string | undefined {
   return typeof v === 'string' && v ? v : undefined;
@@ -44,6 +45,7 @@ joplin.plugins.register({
     let knownConfigs: SidecarEntry[] = [];
 
     const editDialog = await joplin.views.dialogs.create('sidecarEditConfigsDialog');
+    const formDialog = await joplin.views.dialogs.create('sidecarFormDialog');
 
     const pool = new ManagerPool((status) => {
       statuses.set(status.id, status);
@@ -161,6 +163,43 @@ joplin.plugins.register({
         };
       }
       return null; // port freed — proceed; the start's own result line follows
+    }
+
+    // Read the raw user-authored sidecar objects (ids included). Returns null if
+    // the JSON is malformed, so mutations refuse to clobber a broken config.
+    async function readRawConfigs(): Promise<Record<string, unknown>[] | null> {
+      const raw = ((await joplin.settings.value('sidecar.configs')) as string).trim() || '[]';
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        return Array.isArray(parsed) ? (parsed as Record<string, unknown>[]) : null;
+      } catch {
+        return null;
+      }
+    }
+
+    async function writeRawConfigs(arr: Record<string, unknown>[]): Promise<void> {
+      await joplin.settings.setValue('sidecar.configs', JSON.stringify(arr, null, 2));
+    }
+
+    // Open the friendly per-sidecar form, prefilled from `existing` (null = new).
+    // Returns the raw config object on save, or null on cancel / invalid input.
+    async function openSidecarForm(existing: Record<string, unknown> | null): Promise<Record<string, unknown> | null> {
+      await joplin.views.dialogs.setHtml(formDialog, sidecarFormHtml(existing));
+      await joplin.views.dialogs.setButtons(formDialog, [
+        { id: 'cancel', title: 'Cancel' },
+        { id: 'save', title: 'Save' },
+      ]);
+      const res = (await joplin.views.dialogs.open(formDialog)) as {
+        id: string;
+        formData?: { main?: Record<string, string> };
+      };
+      if (res.id !== 'save') return null;
+      const parsed = parseSidecarForm(res.formData?.main);
+      if (!parsed.ok) {
+        await joplin.views.dialogs.showMessageBox(`Not saved: ${parsed.message}`);
+        return null;
+      }
+      return parsed.value;
     }
 
     // --- Commands. Each returns a ResultLine the panel shows inline (or null). ---
@@ -284,6 +323,97 @@ joplin.plugins.register({
     });
 
     await joplin.commands.register({
+      name: 'sidecarLauncher.addSidecar',
+      label: 'Add Sidecar',
+      execute: async (): Promise<ResultLine | null> => {
+        const arr = await readRawConfigs();
+        if (!arr) {
+          return { level: 'error', message: 'Sidecars JSON is invalid — fix it via Edit as JSON first.' };
+        }
+        const value = await openSidecarForm(null);
+        if (!value) return null;
+        value.id = newId();
+        arr.push(value);
+        await writeRawConfigs(arr);
+        await resolve();
+        await selectSidecar(value.id as string);
+        return { level: 'info', message: `Added "${value.name as string}".` };
+      },
+    });
+
+    await joplin.commands.register({
+      name: 'sidecarLauncher.editSidecar',
+      label: 'Edit Sidecar',
+      execute: async (idArg?: unknown): Promise<ResultLine | null> => {
+        const { entry } = await resolve(asId(idArg));
+        if (!entry) return { level: 'error', message: 'No sidecar configured.' };
+        const arr = await readRawConfigs();
+        if (!arr) {
+          return { level: 'error', message: 'Sidecars JSON is invalid — fix it via Edit as JSON first.' };
+        }
+        const idx = arr.findIndex((o) => o && o['id'] === entry.id);
+        const value = await openSidecarForm(idx >= 0 ? arr[idx] : null);
+        if (!value) return null;
+        value.id = entry.id;
+        if (idx >= 0) arr[idx] = value;
+        else arr.push(value);
+        await writeRawConfigs(arr);
+        await resolve();
+        await updatePanel(buildPanelModel());
+        const running = pool.isRunning(entry.id);
+        return {
+          level: 'info',
+          message: `Saved "${value.name as string}".${running ? ' Restart to apply.' : ''}`,
+        };
+      },
+    });
+
+    await joplin.commands.register({
+      name: 'sidecarLauncher.duplicateSidecar',
+      label: 'Duplicate Sidecar',
+      execute: async (idArg?: unknown): Promise<ResultLine | null> => {
+        const { entry } = await resolve(asId(idArg));
+        if (!entry) return { level: 'error', message: 'No sidecar configured.' };
+        const arr = await readRawConfigs();
+        if (!arr) {
+          return { level: 'error', message: 'Sidecars JSON is invalid — fix it via Edit as JSON first.' };
+        }
+        const src = arr.find((o) => o && o['id'] === entry.id);
+        if (!src) return { level: 'error', message: 'Could not find the selected sidecar to duplicate.' };
+        const copy: Record<string, unknown> = { ...src, id: newId(), name: `${entry.name} copy` };
+        arr.push(copy);
+        await writeRawConfigs(arr);
+        await resolve();
+        await selectSidecar(copy.id as string);
+        return { level: 'info', message: `Duplicated as "${copy.name as string}".` };
+      },
+    });
+
+    await joplin.commands.register({
+      name: 'sidecarLauncher.removeSidecar',
+      label: 'Remove Sidecar',
+      execute: async (idArg?: unknown): Promise<ResultLine | null> => {
+        const { entry } = await resolve(asId(idArg));
+        if (!entry) return { level: 'error', message: 'No sidecar configured.' };
+        const running = pool.isRunning(entry.id);
+        const answer = await joplin.views.dialogs.showMessageBox(
+          `Remove sidecar "${entry.name}"?` +
+            (running ? '\n\nIt is running and will be stopped first.' : ''),
+        );
+        if (answer !== 0) return { level: 'warn', message: 'Removal cancelled.' };
+        if (running) await pool.stop(entry.id);
+        const arr = await readRawConfigs();
+        if (!arr) {
+          return { level: 'error', message: 'Sidecars JSON is invalid — fix it via Edit as JSON first.' };
+        }
+        await writeRawConfigs(arr.filter((o) => !(o && o['id'] === entry.id)));
+        await resolve();
+        await updatePanel(buildPanelModel());
+        return { level: 'info', message: `Removed "${entry.name}".` };
+      },
+    });
+
+    await joplin.commands.register({
       name: 'sidecarLauncher.preflight',
       label: 'Run Preflight Checks',
       execute: async (idArg?: unknown): Promise<null> => {
@@ -327,8 +457,12 @@ joplin.plugins.register({
       { commandName: 'sidecarLauncher.start' },
       { commandName: 'sidecarLauncher.stop' },
       { commandName: 'sidecarLauncher.restart' },
-      { commandName: 'sidecarLauncher.togglePanel' },
       { commandName: 'sidecarLauncher.openDashboard' },
+      { commandName: 'sidecarLauncher.togglePanel' },
+      { commandName: 'sidecarLauncher.addSidecar' },
+      { commandName: 'sidecarLauncher.editSidecar' },
+      { commandName: 'sidecarLauncher.duplicateSidecar' },
+      { commandName: 'sidecarLauncher.removeSidecar' },
       { commandName: 'sidecarLauncher.editConfigs' },
       { commandName: 'sidecarLauncher.preflight' },
       { commandName: 'sidecarLauncher.authoriseJoplin' },

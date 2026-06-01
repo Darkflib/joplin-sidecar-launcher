@@ -17,7 +17,7 @@ A Joplin desktop plugin that launches, monitors, and stops local sidecar process
 
 ## What it does
 
-- **Manage multiple sidecars.** Define any number of sidecars as a JSON array; each has its own command, health check, dashboard URL, and lifecycle. The status panel has a dropdown to switch between them.
+- **Manage multiple sidecars.** Add, edit, duplicate, and remove sidecars from the panel via a simple form — each with its own command, health check, dashboard URL, and lifecycle. The status panel has a dropdown to switch between them. (A raw-JSON editor remains available for power users.)
 - **Launch** a configurable command with arguments and working directory when you click *Start* (or automatically on plugin load, per sidecar).
 - **Monitor** each process: tracks state (`stopped`, `starting`, `running`, `healthy`, `unhealthy`, `stopping`, `crashed`), PID, start/exit times, and exit code.
 - **Health polling**: optionally hits a localhost HTTP endpoint on a configurable interval and reflects the result in the panel.
@@ -44,10 +44,17 @@ No marketplace listing yet. Install manually:
 
 ## Configuration
 
-Sidecars are defined as a **JSON array**. The easiest way to edit it is the panel
-button *Edit sidecars* (or *Tools → Sidecar Launcher → Edit Sidecars (JSON)*),
-which opens a multi-line editor. The raw value also lives in
-*Tools → Options → Sidecar Launcher → Sidecars (JSON array)*.
+The friendliest way to manage sidecars is the panel's **Manage** row:
+
+- **Add** — opens a form (name, command, args one-per-line, working directory, health/dashboard URLs, autostart, etc.) and appends a new sidecar.
+- **Edit** — the same form, prefilled for the selected sidecar.
+- **Duplicate** — clones the selected sidecar (as *"… copy"*) so you can tweak one field.
+- **Remove** — deletes the selected sidecar (and stops it first if it's running).
+
+Under the hood these edit a single **JSON array** setting. Power users can edit it
+directly via the panel's *Edit JSON* button (or *Tools → Sidecar Launcher → Edit
+Sidecars (JSON)*); the raw value also lives in *Tools → Options → Sidecar Launcher
+→ Sidecars (JSON array)*.
 
 Each object in the array:
 
@@ -103,9 +110,9 @@ sidecar; `uv run` resolves the project's own virtual environment.
 
 If you previously configured a single sidecar via the flat Command/Arguments/etc.
 fields, those are **migrated automatically** into the Sidecars JSON the first time
-0.2.0 loads — you'll see a one-element array named `Sidecar`. The legacy fields
-remain in the settings UI (relabelled *legacy*) but are no longer read; you can
-ignore or clear them.
+0.2.0 loads — you'll see a one-element array named `Sidecar`. The old single-sidecar
+fields are then hidden from the settings page (they're retained internally only so
+the one-time migration can read them).
 
 ---
 
@@ -179,6 +186,10 @@ to set the JSON; absolute `command` paths (run `which python3`).
 16. **Collapsible logs** — the log section is collapsed on load. Expand it; it grows to fill the panel. It stays expanded across status updates.
 17. **Panel toggle** — *Tools → Sidecar Launcher → Show/Hide Status Panel*. Panel hides and shows correctly.
 18. **Max log lines** — set `maxLogLines: 10`, generate >10 lines. Only 10 are retained (check via diagnostics).
+19. **Add (form)** — click *Add*, fill name + command + a couple of args (one per line), Save. The new sidecar appears in the dropdown and is selected. Saving with an empty command is refused with a message.
+20. **Edit (form)** — select a sidecar, click *Edit*, change the name, Save. The dropdown updates. Editing a running sidecar appends "Restart to apply." to the result line.
+21. **Duplicate** — click *Duplicate*. A *"… copy"* entry appears, selected, with the same fields.
+22. **Remove** — click *Remove*, confirm. The entry disappears; if it was running it is stopped first. Cancel leaves it untouched (inline message, no error popup).
 
 ---
 
