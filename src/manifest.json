@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "id": "io.github.darkflib.joplin-sidecar-launcher",
   "app_min_version": "2.12",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "name": "Sidecar Launcher",
   "description": "Launch, monitor, and stop local sidecar processes from Joplin. Foundation for Python-based PKM sidecar services.",
   "author": "darkflib",
