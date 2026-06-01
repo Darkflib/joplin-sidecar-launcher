@@ -77,52 +77,51 @@ export async function registerSettings(): Promise<void> {
       public: true,
     },
 
-    // --- Legacy single-sidecar fields (migrated into Sidecars JSON on first load) ---
+    // --- Legacy single-sidecar fields ---
+    // Hidden from the UI (public: false) but still registered so migrateLegacy()
+    // can read them once. Joplin can't unregister settings, so this is how we
+    // retire them without cluttering the options page.
     'sidecar.command': {
       section: SECTION_NAME,
       type: SettingItemType.String,
       value: '',
-      label: 'Command (legacy — migrated to Sidecars JSON)',
-      description: 'Legacy single-sidecar field. No longer read; kept only for one-time migration.',
-      public: true,
+      label: 'Command (legacy)',
+      public: false,
     },
     'sidecar.argsJson': {
       section: SECTION_NAME,
       type: SettingItemType.String,
       value: '[]',
-      label: 'Arguments (legacy — migrated to Sidecars JSON)',
-      description: 'Legacy single-sidecar field. No longer read; kept only for one-time migration.',
-      public: true,
+      label: 'Arguments (legacy)',
+      public: false,
     },
     'sidecar.cwd': {
       section: SECTION_NAME,
       type: SettingItemType.String,
       value: '',
-      label: 'Working directory (legacy — migrated to Sidecars JSON)',
-      description: 'Legacy single-sidecar field. No longer read; kept only for one-time migration.',
-      public: true,
+      label: 'Working directory (legacy)',
+      public: false,
     },
     'sidecar.healthUrl': {
       section: SECTION_NAME,
       type: SettingItemType.String,
       value: '',
-      label: 'Health check URL (legacy — migrated to Sidecars JSON)',
-      description: 'Legacy single-sidecar field. No longer read; kept only for one-time migration.',
-      public: true,
+      label: 'Health check URL (legacy)',
+      public: false,
     },
     'sidecar.autostart': {
       section: SECTION_NAME,
       type: SettingItemType.Bool,
       value: false,
-      label: 'Autostart (legacy — migrated to Sidecars JSON)',
-      public: true,
+      label: 'Autostart (legacy)',
+      public: false,
     },
     'sidecar.stopOnUnload': {
       section: SECTION_NAME,
       type: SettingItemType.Bool,
       value: true,
-      label: 'Stop on unload (legacy — migrated to Sidecars JSON)',
-      public: true,
+      label: 'Stop on unload (legacy)',
+      public: false,
     },
     'sidecar.healthIntervalSeconds': {
       section: SECTION_NAME,
@@ -130,8 +129,8 @@ export async function registerSettings(): Promise<void> {
       value: 5,
       minimum: 1,
       maximum: 300,
-      label: 'Health check interval (legacy — migrated to Sidecars JSON)',
-      public: true,
+      label: 'Health check interval (legacy)',
+      public: false,
     },
     'sidecar.maxLogLines': {
       section: SECTION_NAME,
@@ -139,8 +138,8 @@ export async function registerSettings(): Promise<void> {
       value: 100,
       minimum: 10,
       maximum: 1000,
-      label: 'Max log lines (legacy — migrated to Sidecars JSON)',
-      public: true,
+      label: 'Max log lines (legacy)',
+      public: false,
     },
   });
 }
