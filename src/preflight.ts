@@ -1,5 +1,5 @@
-import { SidecarConfig } from './types';
-import { isLocalhostUrl } from './settings';
+import { SidecarEntry } from './types';
+import { isLocalhostUrl, isHttpUrl } from './settings';
 
 export type PreflightLevel = 'ok' | 'warn' | 'error';
 
@@ -38,7 +38,7 @@ function directoryExists(dir: string): boolean {
  * process is spawned (so the user sees a clear explanation rather than the
  * cryptic "Spawn returned no PID").
  */
-export function runPreflight(config: SidecarConfig): PreflightResult[] {
+export function runPreflight(config: SidecarEntry): PreflightResult[] {
   const results: PreflightResult[] = [];
 
   // --- Command: the #1 failure cause ---
@@ -92,6 +92,20 @@ export function runPreflight(config: SidecarConfig): PreflightResult[] {
       results.push({ level: 'ok', message: `Working directory exists: ${config.cwd}` });
     } else {
       results.push({ level: 'error', message: `Working directory does not exist: ${config.cwd}` });
+    }
+  }
+
+  // --- Dashboard URL ---
+  if (config.dashboardUrl) {
+    if (!isHttpUrl(config.dashboardUrl)) {
+      results.push({ level: 'error', message: `Dashboard URL must be http(s). Got: ${config.dashboardUrl}` });
+    } else if (!isLocalhostUrl(config.dashboardUrl)) {
+      results.push({
+        level: 'warn',
+        message: `Dashboard URL is not localhost: ${config.dashboardUrl}. It will open in your browser as-is.`,
+      });
+    } else {
+      results.push({ level: 'ok', message: `Dashboard URL: ${config.dashboardUrl}` });
     }
   }
 

@@ -1,9 +1,9 @@
 import joplin from 'api';
-import { SidecarConfig, SidecarStatus } from './types';
+import { SidecarEntry, SidecarStatus } from './types';
 import { runPreflight, formatPreflight } from './preflight';
 
 export async function buildDiagnostics(
-  config: SidecarConfig | null,
+  config: SidecarEntry | null,
   status: SidecarStatus,
   pluginVersion: string,
 ): Promise<string> {
@@ -15,10 +15,12 @@ export async function buildDiagnostics(
     `Joplin version: ${versionInfo.version ?? 'unknown'}`,
     '',
     '--- Configuration ---',
+    `Name: ${config?.name || '(not set)'}`,
     `Command: ${config?.command || '(not set)'}`,
     `Args: ${JSON.stringify(config?.args ?? [])}`,
     `Working directory: ${config?.cwd || '(default)'}`,
     `Health URL: ${config?.healthUrl || '(not set)'}`,
+    `Dashboard URL: ${config?.dashboardUrl || '(not set)'}`,
     `Autostart: ${config?.autostart ?? false}`,
     `Stop on unload: ${config?.stopOnUnload ?? true}`,
     `Health interval: ${config?.healthIntervalSeconds ?? 5}s`,
@@ -49,19 +51,20 @@ export async function buildDiagnostics(
 }
 
 export async function copyDiagnostics(
-  config: SidecarConfig | null,
+  config: SidecarEntry | null,
   status: SidecarStatus,
   pluginVersion: string,
-): Promise<void> {
+): Promise<{ ok: boolean; message: string }> {
   const text = await buildDiagnostics(config, status, pluginVersion);
   try {
     await joplin.clipboard.writeText(text);
-    await joplin.views.dialogs.showMessageBox('Diagnostics copied to clipboard.');
+    return { ok: true, message: 'Diagnostics copied to clipboard.' };
   } catch {
     // Clipboard not available — show in dialog
     const dialog = await joplin.views.dialogs.create('sidecarDiagDialog');
     await joplin.views.dialogs.setHtml(dialog, `<pre style="font-size:11px;white-space:pre-wrap">${text.replace(/</g, '&lt;')}</pre>`);
     await joplin.views.dialogs.setButtons(dialog, [{ id: 'ok', title: 'Close' }]);
     await joplin.views.dialogs.open(dialog);
+    return { ok: true, message: 'Clipboard unavailable — diagnostics shown in a dialog.' };
   }
 }
