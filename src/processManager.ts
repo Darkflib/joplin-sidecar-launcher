@@ -128,6 +128,11 @@ export class ProcessManager {
         env,
         shell: false,
         stdio: ['ignore', 'pipe', 'pipe'],
+        // Make the child its own process-group leader so we can signal the WHOLE
+        // tree. Wrappers like `uv run python -m uvicorn` don't forward SIGTERM to
+        // the grandchild that holds the port — killing only the immediate child
+        // leaves it bound ("address already in use" on the next start).
+        detached: true,
       });
     } catch (e: unknown) {
       const err = e as Error;
@@ -213,12 +218,44 @@ export class ProcessManager {
     this.setState('stopping');
     this.stopHealthPolling();
     try {
-      this.child.kill('SIGTERM');
+      this.signalTree('SIGTERM');
     } catch (e: unknown) {
       const err = e as Error;
       return { ok: false, message: `Failed to send SIGTERM: ${err.message}` };
     }
     return { ok: true, message: 'Stop signal sent.' };
+  }
+
+  /** SIGKILL the whole process group. Best-effort; safe to call when stopped. */
+  forceKill(): void {
+    if (!this.child || this.pid == null) return;
+    try {
+      this.signalTree('SIGKILL');
+    } catch {
+      /* already gone */
+    }
+  }
+
+  /**
+   * Deliver a signal to the child's entire process group (negative pid) so
+   * wrapper-spawned grandchildren receive it too. Falls back to signalling the
+   * immediate child if the group send fails. On Windows there are no process
+   * groups, so use taskkill /T to walk the tree.
+   */
+  private signalTree(signal: 'SIGTERM' | 'SIGKILL'): void {
+    if (!this.child || this.pid == null) return;
+    if (process.platform === 'win32') {
+      const args = ['/pid', String(this.pid), '/T'];
+      if (signal === 'SIGKILL') args.push('/F');
+      const killer = spawn('taskkill', args, { stdio: 'ignore' });
+      killer.on('error', () => { /* best-effort */ });
+      return;
+    }
+    try {
+      process.kill(-this.pid, signal); // negative pid → process group
+    } catch {
+      this.child.kill(signal); // group gone; signal the child directly
+    }
   }
 
   async restart(config: SidecarEntry): Promise<{ ok: boolean; message: string }> {
@@ -228,9 +265,7 @@ export class ProcessManager {
       // Wait up to 3s for the child to exit
       await new Promise<void>((resolve) => {
         const deadline = setTimeout(() => {
-          if (this.child) {
-            try { this.child.kill('SIGKILL'); } catch { /* ignore */ }
-          }
+          if (this.child) this.forceKill();
           resolve();
         }, 3000);
         const check = setInterval(() => {
@@ -360,5 +395,12 @@ export class ManagerPool {
       if (m.isRunning() && (!shouldStop || shouldStop(id))) stops.push(m.stop());
     }
     await Promise.all(stops);
+  }
+
+  /** SIGKILL any still-running sidecar's process group (used as an unload backstop). */
+  forceKillAll(shouldStop?: (id: string) => boolean): void {
+    for (const [id, m] of this.managers.entries()) {
+      if (m.isRunning() && (!shouldStop || shouldStop(id))) m.forceKill();
+    }
   }
 }

@@ -145,7 +145,7 @@ npm run build         # development build, no minification
 - **No restart policy.** Crashed processes stay in `crashed` state until you manually click Restart or Start. Automatic retry with back-off is a planned extension.
 - **Shared Joplin token.** All sidecars receive the same `JOPLIN_TOKEN` / `JOPLIN_BASE_URL`. Per-sidecar tokens are not currently supported.
 - **No stdin.** The child's stdin is closed (`'ignore'`). Interactive processes won't work.
-- **SIGTERM only.** The stop button sends SIGTERM. If your process ignores SIGTERM, you'll need to kill it manually. (SIGKILL is only sent during restart if SIGTERM hasn't worked within 3 s.)
+- **Graceful then forced.** Each sidecar is launched as its own process group, and signals go to the whole group — so wrapper-spawned children (e.g. `uv run … uvicorn`) are stopped too, not just the immediate child. The Stop button sends SIGTERM; restart and plugin-unload escalate to SIGKILL if SIGTERM hasn't worked (3 s for restart, ~0.8 s on unload).
 - **HTTP health checks only.** HTTPS localhost endpoints are not supported (self-signed cert handling adds complexity for marginal benefit here).
 - **Log buffer is in-memory only.** Logs are lost when Joplin restarts. Persistent log files are a planned extension.
 - **No environment variable injection UI.** You can't set custom env vars from the settings panel. Work around with a wrapper script.

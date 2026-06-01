@@ -323,9 +323,13 @@ joplin.plugins.register({
     joplin.plugins.onUnload(async () => {
       const { configs } = await loadConfigs();
       const keepRunning = new Set(configs.filter((c) => !c.stopOnUnload).map((c) => c.id));
+      const shouldStop = (id: string) => !keepRunning.has(id);
       if (pool.anyRunning()) {
-        await pool.stopAll((id) => !keepRunning.has(id));
-        await new Promise((r) => setTimeout(r, 500));
+        // SIGTERM the process groups (delivered synchronously, so it lands even if
+        // Joplin doesn't await us), give them a moment, then SIGKILL any survivors.
+        await pool.stopAll(shouldStop);
+        await new Promise((r) => setTimeout(r, 800));
+        pool.forceKillAll(shouldStop);
       }
     });
   },
