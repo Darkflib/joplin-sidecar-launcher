@@ -189,6 +189,7 @@ function buildHtml(model: PanelModel | null): string {
       ${btn('Edit', 'editSidecar')}
       ${btn('Duplicate', 'duplicateSidecar')}
       ${btn('Remove', 'removeSidecar')}
+      ${btn('Secrets', 'manageSecrets')}
     </div>
     <div>
       ${btn('Preflight', 'preflight')}

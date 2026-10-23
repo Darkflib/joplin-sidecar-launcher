@@ -1,6 +1,29 @@
 import joplin from 'api';
 import { SidecarEntry, SidecarStatus } from './types';
 import { runPreflight, formatPreflight } from './preflight';
+import { looksSecret } from './envVars';
+
+/**
+ * Env section for the report: non-secret vars with their values (except
+ * credential-looking names, which preflight already flags and whose values are
+ * hidden here since the report is meant to be pasted), secret vars by name only
+ * as ***set*** / ***unset***. Secret values are never read here beyond
+ * a presence check.
+ */
+export function envDiagnosticLines(config: SidecarEntry | null): string[] {
+  const env = config?.env ?? {};
+  const secretNames = config?.secretEnv ?? [];
+  const secretValues = config?.secretValues ?? {};
+  const lines: string[] = [];
+  const keys = Object.keys(env);
+  lines.push(keys.length ? 'Env:' : 'Env: (none)');
+  for (const k of keys) lines.push(`  ${k}=${looksSecret(k) ? '***hidden (credential-like name)***' : env[k]}`);
+  lines.push(secretNames.length ? 'Secret env:' : 'Secret env: (none)');
+  for (const n of secretNames) {
+    lines.push(`  ${n}=${Object.prototype.hasOwnProperty.call(secretValues, n) ? '***set***' : '***unset***'}`);
+  }
+  return lines;
+}
 
 export async function buildDiagnostics(
   config: SidecarEntry | null,
@@ -25,6 +48,7 @@ export async function buildDiagnostics(
     `Stop on unload: ${config?.stopOnUnload ?? true}`,
     `Health interval: ${config?.healthIntervalSeconds ?? 5}s`,
     `Max log lines: ${config?.maxLogLines ?? 100}`,
+    ...envDiagnosticLines(config),
     '',
     '--- Current Status ---',
     `State: ${status.state}`,
@@ -45,7 +69,7 @@ export async function buildDiagnostics(
       l => `[${l.timestamp}] [${l.stream}] ${l.line}`,
     ),
     '',
-    '(Environment variables not included)',
+    '(Inherited environment, JOPLIN_TOKEN and secret values not included)',
   ];
   return lines.join('\n');
 }

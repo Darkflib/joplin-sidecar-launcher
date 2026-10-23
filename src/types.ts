@@ -50,6 +50,16 @@ export interface SidecarEntry {
   stopOnUnload: boolean;
   healthIntervalSeconds: number;
   maxLogLines: number;
+  /** Validated non-secret variables from the entry's `env` object (stored in plaintext). */
+  env: Record<string, string>;
+  /** Declared secret variable names (`secretEnv`). Only the names are stored in the JSON. */
+  secretEnv: string[];
+  /**
+   * Resolved secret values from the keychain setting, keyed by name — only the
+   * declared names that have a value. Never logged or shown; diagnostics report
+   * set/unset per name from `secretEnv`.
+   */
+  secretValues: Record<string, string>;
   joplinBaseUrl?: string;
   joplinToken?: string;
 }

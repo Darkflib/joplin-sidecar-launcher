@@ -1,6 +1,8 @@
 import joplin from 'api';
 import { SettingItemType } from 'api/types';
 import { SidecarEntry, EntryError } from './types';
+import { parseEnv, parseSecretNames } from './envVars';
+import { SECRET_SETTING_KEY, loadSecretMap, secretsFor, SecretMap } from './secrets';
 
 export const SECTION_NAME = 'sidecarLauncher';
 
@@ -18,6 +20,8 @@ const CONFIGS_EXAMPLE = JSON.stringify(
       stopOnUnload: true,
       healthIntervalSeconds: 5,
       maxLogLines: 100,
+      env: { MCP_PORT: '8765' },
+      secretEnv: ['MCP_API_KEY'],
     },
   ],
   null,
@@ -41,7 +45,9 @@ export async function registerSettings(): Promise<void> {
       description:
         'A JSON array of sidecar definitions. Each object: { name, command (absolute path), ' +
         'args (array), cwd?, healthUrl?, dashboardUrl?, useSidecarOpener?, autostart?, ' +
-        'stopOnUnload?, healthIntervalSeconds?, maxLogLines? }. Prefer the "Edit Sidecars (JSON)" command ' +
+        'stopOnUnload?, healthIntervalSeconds?, maxLogLines?, env? (object of string values), ' +
+        'secretEnv? (array of variable names — values are set via the panel\'s Secrets button and ' +
+        'kept in the keychain, never here) }. Prefer the "Edit Sidecars (JSON)" command ' +
         `for a larger editor. Example: ${CONFIGS_EXAMPLE}`,
       public: true,
     },
@@ -76,6 +82,17 @@ export async function registerSettings(): Promise<void> {
         'the OS keychain — kept out of the Sidecars JSON so it is never written in plaintext.',
       secure: true,
       public: true,
+    },
+    // Per-sidecar secret env values: JSON map { [sidecarId]: { [VAR]: value } }.
+    // Keychain-backed like the Joplin token; managed via the Secrets dialog, so
+    // hidden from the options page (editing raw JSON there would echo values).
+    [SECRET_SETTING_KEY]: {
+      section: SECTION_NAME,
+      type: SettingItemType.String,
+      value: '',
+      label: 'Sidecar secret environment variables (internal)',
+      secure: true,
+      public: false,
     },
 
     // --- Legacy single-sidecar fields ---
@@ -169,6 +186,7 @@ export async function loadConfigs(): Promise<{ configs: SidecarEntry[]; errors: 
   // Shared Joplin connection, injected into every entry.
   const joplinBaseUrl = (await joplin.settings.value('sidecar.joplinBaseUrl') as string).trim() || undefined;
   const joplinToken = (await joplin.settings.value('sidecar.joplinToken') as string).trim() || undefined;
+  const secretMap = await loadSecretMap();
 
   let parsed: unknown;
   try {
@@ -186,7 +204,7 @@ export async function loadConfigs(): Promise<{ configs: SidecarEntry[]; errors: 
   const seenIds = new Set<string>();
   let idsAssigned = false;
   parsed.forEach((item, index) => {
-    const { entry, entryErrors, generatedId } = normaliseEntry(item, index, seenIds, joplinBaseUrl, joplinToken);
+    const { entry, entryErrors, generatedId } = normaliseEntry(item, index, seenIds, joplinBaseUrl, joplinToken, secretMap);
     seenIds.add(entry.id);
     configs.push(entry);
     errors.push(...entryErrors);
@@ -213,6 +231,7 @@ function normaliseEntry(
   seenIds: Set<string>,
   joplinBaseUrl: string | undefined,
   joplinToken: string | undefined,
+  secretMap: SecretMap,
 ): { entry: SidecarEntry; entryErrors: EntryError[]; generatedId: boolean } {
   const errs: EntryError[] = [];
   const obj = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
@@ -263,6 +282,16 @@ function normaliseEntry(
   const healthIntervalSeconds = clampInt(obj.healthIntervalSeconds, 5, 1, 300);
   const maxLogLines = clampInt(obj.maxLogLines, 100, 10, 1000);
 
+  // Env injection. Problems are entry errors (so they block start), but the valid
+  // subset is kept so diagnostics still show what was understood.
+  const { env, errors: envErrors } = parseEnv(obj.env);
+  envErrors.forEach(push);
+  const { names: secretEnv, errors: secretErrors } = parseSecretNames(obj.secretEnv, env);
+  secretErrors.forEach(push);
+  // Values are looked up by the (possibly freshly minted) id, so a duplicated
+  // entry with a new id starts with every secret unset.
+  const secretValues = secretsFor(secretMap, id, secretEnv);
+
   return {
     entry: {
       id,
@@ -277,6 +306,9 @@ function normaliseEntry(
       stopOnUnload,
       healthIntervalSeconds,
       maxLogLines,
+      env,
+      secretEnv,
+      secretValues,
       joplinBaseUrl,
       joplinToken,
     },
