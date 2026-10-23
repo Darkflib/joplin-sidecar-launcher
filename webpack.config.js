@@ -30,13 +30,12 @@ module.exports = (env) => {
       rules: [
         {
           test: /\.ts$/,
-          use: {
-            loader: 'ts-loader',
-            options: {
-              // transpileOnly avoids type-checking @joplin/lib's own .ts files
-              // transitively.  Run `tsc --noEmit` separately for a proper pass.
-              transpileOnly: true,
-            },
+          // esbuild only strips types; TypeScript 7 (native) has no JS API for
+          // ts-loader to drive.  Run `npm run typecheck` for a proper pass.
+          loader: 'esbuild-loader',
+          options: {
+            loader: 'ts',
+            target: 'es2020',
           },
           exclude: /node_modules/,
         },
@@ -51,17 +50,6 @@ module.exports = (env) => {
           },
         ],
       }),
-    ],
-    // No 'api' external — it is aliased to a local directory above.
-    // @joplin/lib is only a dev-time type source; nothing from it is used
-    // at runtime, so marking it external is safe (it will never be required).
-    externals: [
-      ({ request }, callback) => {
-        if (request && request.startsWith('@joplin/lib')) {
-          return callback(null, `commonjs ${request}`);
-        }
-        callback();
-      },
     ],
   };
 };

@@ -127,23 +127,30 @@ reliable way to stop the sidecar immediately.
 
 ---
 
-## 6. tsconfig: use `baseUrl`, not `rootDir`
+## 6. tsconfig: no `rootDir`, and no `baseUrl` on TypeScript 7
 
 The generator template does not set `rootDir`. If you set `rootDir: "src"`,
 TypeScript will reject any files outside `src/` — including the `api/` directory
-at the project root.
+at the project root. Add `api/**/*` to `include` instead.
 
-Use `baseUrl: "."` instead, and add `api/**/*` to `include`:
+The template's `baseUrl: "."` and `moduleResolution: "node"` are **removed** in
+TypeScript 7 (errors TS5102 / TS5108). Use `bundler` resolution and make the
+`paths` entries relative:
 
 ```json
 {
   "compilerOptions": {
-    "baseUrl": ".",
-    "outDir": "dist"
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "paths": {
+      "api": ["./api/index.ts"],
+      "api/types": ["./api/types.ts"]
+    }
   },
   "include": ["src/**/*", "api/**/*"]
 }
 ```
 
-Since webpack handles the actual emit (with `transpileOnly: true` in ts-loader),
-`outDir` is largely irrelevant at build time but keeps `tsc --noEmit` happy.
+TypeScript 7 is the native compiler and has no JS API, so `ts-loader` can't use
+it. Webpack transpiles with `esbuild-loader` (types stripped, not checked);
+`npm run typecheck` is the only type-checking pass, and CI runs it.
