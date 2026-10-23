@@ -1,16 +1,19 @@
 import { spawn, ChildProcess } from 'child_process';
 import { SidecarEntry, SidecarState, SidecarStatus, HealthStatus, LogLine } from './types';
 import { checkHealth } from './health';
+import { PYTHON_ENV_BLOCKLIST } from './envVars';
 
 type StatusChangeCallback = (status: SidecarStatus) => void;
 
-// Python env vars known to poison child interpreters
-const PYTHON_ENV_BLOCKLIST = ['PYTHONHOME', 'PYTHONPATH', 'PYTHONSTARTUP', 'VIRTUAL_ENV', 'CONDA_PREFIX'];
-
 /**
- * Sanitised child environment: strips Python vars that poison child interpreters,
- * marks the launch source, and injects the shared Joplin connection details
- * (token from the keychain). The token is never logged or included in diagnostics.
+ * Sanitised child environment, built in precedence order (later wins):
+ *   1. the inherited process.env, minus Python vars that poison child interpreters;
+ *   2. the entry's non-secret `env`;
+ *   3. the entry's secret values (from the keychain setting);
+ *   4. launcher-owned vars — launch marker and the shared Joplin connection.
+ * Validation already rejects entry keys that collide with 4 or the blocklist;
+ * the ordering is the backstop. Secret values and the token are never logged or
+ * included in diagnostics.
  */
 function buildChildEnv(entry: SidecarEntry): Record<string, string> {
   const env: Record<string, string> = {};
@@ -19,10 +22,22 @@ function buildChildEnv(entry: SidecarEntry): Record<string, string> {
       env[k] = v;
     }
   }
+  Object.assign(env, entry.env, entry.secretValues);
   env['JOPLIN_SIDECAR_LAUNCHED_BY'] = 'joplin-sidecar-launcher';
   if (entry.joplinBaseUrl) env['JOPLIN_BASE_URL'] = entry.joplinBaseUrl;
   if (entry.joplinToken) env['JOPLIN_TOKEN'] = entry.joplinToken;
   return env;
+}
+
+/**
+ * Values to mask in captured output, longest first so a secret containing
+ * another is masked whole. Very short values are skipped — masking every "a" in
+ * the log would destroy it without protecting anything worth protecting.
+ */
+function redactionsFor(entry: SidecarEntry): string[] {
+  const values = [...Object.values(entry.secretValues ?? {})];
+  if (entry.joplinToken) values.push(entry.joplinToken);
+  return [...new Set(values.filter((v) => v.length >= 4))].sort((a, b) => b.length - a.length);
 }
 
 /** Platform-appropriate "open this URL in the default browser" command. */
@@ -149,6 +164,9 @@ export class ProcessManager {
   private healthTimer: ReturnType<typeof setInterval> | null = null;
   private partialStdout: string = '';
   private partialStderr: string = '';
+  // Secret values (and the Joplin token) to mask if the child echoes them; the
+  // log buffer feeds the panel and diagnostics, so secrets must not land in it.
+  private redactions: string[] = [];
 
   private onStatusChange: StatusChangeCallback;
 
@@ -183,6 +201,7 @@ export class ProcessManager {
 
     this.config = config;
     this.maxLogLines = config.maxLogLines;
+    this.redactions = redactionsFor(config);
     this.setState('starting');
     this.health = config.healthUrl ? 'unknown' : 'not_configured';
     this.exitCode = undefined;
@@ -367,6 +386,9 @@ export class ProcessManager {
   }
 
   private appendLog(stream: 'stdout' | 'stderr', line: string): void {
+    for (const secret of this.redactions) {
+      if (line.includes(secret)) line = line.split(secret).join('***');
+    }
     this.logs.push({ timestamp: new Date().toISOString(), stream, line });
     if (this.logs.length > this.maxLogLines) {
       this.logs = this.logs.slice(this.logs.length - this.maxLogLines);

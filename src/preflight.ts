@@ -1,5 +1,6 @@
 import { SidecarEntry } from './types';
 import { isLocalhostUrl, isHttpUrl } from './settings';
+import { looksSecret } from './envVars';
 
 export type PreflightLevel = 'ok' | 'warn' | 'error';
 
@@ -106,6 +107,34 @@ export function runPreflight(config: SidecarEntry): PreflightResult[] {
       });
     } else {
       results.push({ level: 'ok', message: `Dashboard URL: ${config.dashboardUrl}` });
+    }
+  }
+
+  // --- Environment injection ---
+  const envKeys = Object.keys(config.env ?? {});
+  if (envKeys.length) {
+    results.push({ level: 'ok', message: `Env vars injected: ${envKeys.join(', ')}` });
+    const secretish = envKeys.filter(looksSecret);
+    if (secretish.length) {
+      results.push({
+        level: 'warn',
+        message:
+          `${secretish.join(', ')} look${secretish.length === 1 ? 's' : ''} like a credential but ` +
+          `${secretish.length === 1 ? 'is' : 'are'} stored in plaintext in the Sidecars JSON. ` +
+          `Move ${secretish.length === 1 ? 'it' : 'them'} to secretEnv and set the value via Secrets.`,
+      });
+    }
+  }
+  const secretNames = config.secretEnv ?? [];
+  if (secretNames.length) {
+    const unset = secretNames.filter((n) => !(config.secretValues && n in config.secretValues));
+    if (unset.length) {
+      results.push({
+        level: 'warn',
+        message: `Secret env var${unset.length === 1 ? '' : 's'} not set: ${unset.join(', ')}. Use Secrets in the panel.`,
+      });
+    } else {
+      results.push({ level: 'ok', message: `Secret env vars set: ${secretNames.join(', ')}` });
     }
   }
 

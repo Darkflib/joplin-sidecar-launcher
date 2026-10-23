@@ -1,7 +1,15 @@
 import joplin from 'api';
 import { MenuItemLocation } from 'api/types';
 import { registerSettings, loadConfigs, newId } from './settings';
-import { sidecarFormHtml, parseSidecarForm } from './sidecarForm';
+import { sidecarFormHtml, parseSidecarForm, secretsDialogHtml } from './sidecarForm';
+import {
+  loadSecretMap,
+  setSecret,
+  clearSecret,
+  deleteSidecarSecrets,
+  pruneSecrets,
+  generateSecretValue,
+} from './secrets';
 import { ManagerPool, openDashboard, emptyStatus } from './processManager';
 import { createPanel, updatePanel, togglePanel, PanelMessage } from './panel';
 import { copyDiagnostics } from './diagnostics';
@@ -10,7 +18,7 @@ import { authoriseJoplinToken } from './joplinAuth';
 import { sidecarPort, isPortInUse, findListenerPids, killPids } from './portCheck';
 import { SidecarEntry, SidecarStatus, EntryError, ResultLine } from './types';
 
-const PLUGIN_VERSION = '0.3.1';
+const PLUGIN_VERSION = '0.4.0';
 
 function asId(v: unknown): string | undefined {
   return typeof v === 'string' && v ? v : undefined;
@@ -27,7 +35,10 @@ function editDialogHtml(current: string): string {
       Each object: <code>name</code>, <code>command</code> (absolute path), <code>args</code> (array),
       and optional <code>cwd</code>, <code>healthUrl</code>, <code>dashboardUrl</code>,
       <code>autostart</code>, <code>stopOnUnload</code>, <code>healthIntervalSeconds</code>,
-      <code>maxLogLines</code>. The Joplin API token is configured separately and shared across all sidecars.
+      <code>maxLogLines</code>, <code>env</code> (object of string values, plaintext), and
+      <code>secretEnv</code> (array of variable names — set their values with the panel's
+      <strong>Secrets</strong> button; never put secret values in this JSON). The Joplin API token is
+      configured separately and shared across all sidecars.
     </p>
     <textarea name="configs" rows="22" style="width:560px;font-family:monospace;font-size:12px">${escHtmlAttr(current)}</textarea>
   </form>`;
@@ -46,6 +57,7 @@ joplin.plugins.register({
 
     const editDialog = await joplin.views.dialogs.create('sidecarEditConfigsDialog');
     const formDialog = await joplin.views.dialogs.create('sidecarFormDialog');
+    const secretsDialog = await joplin.views.dialogs.create('sidecarSecretsDialog');
 
     const pool = new ManagerPool((status) => {
       statuses.set(status.id, status);
@@ -183,8 +195,11 @@ joplin.plugins.register({
 
     // Open the friendly per-sidecar form, prefilled from `existing` (null = new).
     // Returns the raw config object on save, or null on cancel / invalid input.
-    async function openSidecarForm(existing: Record<string, unknown> | null): Promise<Record<string, unknown> | null> {
-      await joplin.views.dialogs.setHtml(formDialog, sidecarFormHtml(existing));
+    async function openSidecarForm(
+      existing: Record<string, unknown> | null,
+      setSecretNames: string[] = [],
+    ): Promise<Record<string, unknown> | null> {
+      await joplin.views.dialogs.setHtml(formDialog, sidecarFormHtml(existing, setSecretNames));
       await joplin.views.dialogs.setButtons(formDialog, [
         { id: 'cancel', title: 'Cancel' },
         { id: 'save', title: 'Save' },
@@ -200,6 +215,29 @@ joplin.plugins.register({
         return null;
       }
       return parsed.value;
+    }
+
+    // Names of a saved raw entry's declared secrets that have no stored value.
+    async function unsetSecretNames(id: string, value: Record<string, unknown>): Promise<string[]> {
+      const names = Array.isArray(value.secretEnv) ? (value.secretEnv as string[]) : [];
+      const stored = (await loadSecretMap())[id] ?? {};
+      return names.filter((n) => !stored[n]);
+    }
+
+    function unsetHint(unset: string[]): string {
+      return unset.length ? ` Secret${unset.length === 1 ? '' : 's'} unset: ${unset.join(', ')} — use Secrets.` : '';
+    }
+
+    // Write a secret to the clipboard. On failure fall back to showing it once in
+    // a message box — the user explicitly asked for it, and it is never logged.
+    async function revealSecret(name: string, value: string, what: string): Promise<string> {
+      try {
+        await joplin.clipboard.writeText(value);
+        return `${what} ${name} copied to the clipboard.`;
+      } catch {
+        await joplin.views.dialogs.showMessageBox(`Clipboard unavailable. ${what} ${name}:\n\n${value}`);
+        return `${what} ${name} shown in a dialog (clipboard unavailable).`;
+      }
     }
 
     // --- Commands. Each returns a ResultLine the panel shows inline (or null). ---
@@ -337,7 +375,8 @@ joplin.plugins.register({
         await writeRawConfigs(arr);
         await resolve();
         await selectSidecar(value.id as string);
-        return { level: 'info', message: `Added "${value.name as string}".` };
+        const unset = await unsetSecretNames(value.id as string, value);
+        return { level: unset.length ? 'warn' : 'info', message: `Added "${value.name as string}".${unsetHint(unset)}` };
       },
     });
 
@@ -352,18 +391,22 @@ joplin.plugins.register({
           return { level: 'error', message: 'Sidecars JSON is invalid — fix it via Edit as JSON first.' };
         }
         const idx = arr.findIndex((o) => o && o['id'] === entry.id);
-        const value = await openSidecarForm(idx >= 0 ? arr[idx] : null);
+        const value = await openSidecarForm(idx >= 0 ? arr[idx] : null, Object.keys(entry.secretValues));
         if (!value) return null;
         value.id = entry.id;
         if (idx >= 0) arr[idx] = value;
         else arr.push(value);
         await writeRawConfigs(arr);
+        // A name removed from the form's secret list is an explicit edit: drop its
+        // stored value too rather than leave it orphaned in the keychain.
+        await pruneSecrets(entry.id, Array.isArray(value.secretEnv) ? (value.secretEnv as string[]) : []);
         await resolve();
         await updatePanel(buildPanelModel());
         const running = pool.isRunning(entry.id);
+        const unset = await unsetSecretNames(entry.id, value);
         return {
-          level: 'info',
-          message: `Saved "${value.name as string}".${running ? ' Restart to apply.' : ''}`,
+          level: unset.length ? 'warn' : 'info',
+          message: `Saved "${value.name as string}".${running ? ' Restart to apply.' : ''}${unsetHint(unset)}`,
         };
       },
     });
@@ -380,12 +423,18 @@ joplin.plugins.register({
         }
         const src = arr.find((o) => o && o['id'] === entry.id);
         if (!src) return { level: 'error', message: 'Could not find the selected sidecar to duplicate.' };
+        // Secret values are keyed by id, so the copy declares the same names but
+        // starts with all of them unset — secrets are never copied.
         const copy: Record<string, unknown> = { ...src, id: newId(), name: `${entry.name} copy` };
         arr.push(copy);
         await writeRawConfigs(arr);
         await resolve();
         await selectSidecar(copy.id as string);
-        return { level: 'info', message: `Duplicated as "${copy.name as string}".` };
+        const unset = await unsetSecretNames(copy.id as string, copy);
+        return {
+          level: unset.length ? 'warn' : 'info',
+          message: `Duplicated as "${copy.name as string}".${unsetHint(unset)}`,
+        };
       },
     });
 
@@ -407,9 +456,87 @@ joplin.plugins.register({
           return { level: 'error', message: 'Sidecars JSON is invalid — fix it via Edit as JSON first.' };
         }
         await writeRawConfigs(arr.filter((o) => !(o && o['id'] === entry.id)));
+        await deleteSidecarSecrets(entry.id);
         await resolve();
         await updatePanel(buildPanelModel());
         return { level: 'info', message: `Removed "${entry.name}".` };
+      },
+    });
+
+    await joplin.commands.register({
+      name: 'sidecarLauncher.manageSecrets',
+      label: 'Manage Sidecar Secrets',
+      execute: async (idArg?: unknown): Promise<ResultLine | null> => {
+        const { entry } = await resolve(asId(idArg));
+        if (!entry) return { level: 'error', message: 'No sidecar configured.' };
+        if (!entry.secretEnv.length) {
+          return {
+            level: 'warn',
+            message: `"${entry.name}" declares no secret env vars — add names under Secret environment variables in Edit.`,
+          };
+        }
+        const setNames = Object.keys(entry.secretValues);
+        await joplin.views.dialogs.setHtml(secretsDialog, secretsDialogHtml(entry.name, entry.secretEnv, setNames));
+        await joplin.views.dialogs.setButtons(secretsDialog, [
+          { id: 'cancel', title: 'Cancel' },
+          { id: 'clear', title: 'Clear' },
+          { id: 'copy', title: 'Copy' },
+          { id: 'generate', title: 'Generate' },
+          { id: 'set', title: 'Set' },
+        ]);
+        const res = (await joplin.views.dialogs.open(secretsDialog)) as {
+          id: string;
+          formData?: { main?: { name?: string; value?: string } };
+        };
+        if (res.id === 'cancel') return null;
+        const name = res.formData?.main?.name ?? '';
+        // Only act on a name the entry declares — the select is the only source,
+        // but don't trust the webview's form data blindly.
+        if (!entry.secretEnv.includes(name)) {
+          return { level: 'error', message: 'Unknown secret variable — nothing changed.' };
+        }
+        const isSet = setNames.includes(name);
+        const restart = pool.isRunning(entry.id) ? ' Restart to apply.' : '';
+        let message: string;
+        switch (res.id) {
+          case 'set': {
+            // Trimmed: a stray newline from a paste is far likelier than a key
+            // that genuinely ends in whitespace.
+            const value = (res.formData?.main?.value ?? '').trim();
+            if (!value) return { level: 'warn', message: `No value entered — ${name} unchanged.` };
+            await setSecret(entry.id, name, value);
+            message = `${name} set.${restart}`;
+            break;
+          }
+          case 'generate': {
+            if (isSet) {
+              const answer = await joplin.views.dialogs.showMessageBox(
+                `${name} already has a value. Replace it with a newly generated one?\n\n` +
+                  'Anything using the old value (e.g. an MCP client config) will need the new one.',
+              );
+              if (answer !== 0) return { level: 'warn', message: `${name} unchanged.` };
+            }
+            const value = generateSecretValue();
+            await setSecret(entry.id, name, value);
+            message = `${await revealSecret(name, value, 'Generated')}${restart}`;
+            break;
+          }
+          case 'copy': {
+            const value = entry.secretValues[name];
+            if (!value) return { level: 'warn', message: `${name} is unset — nothing to copy.` };
+            return { level: 'info', message: await revealSecret(name, value, 'Value of') };
+          }
+          case 'clear':
+            if (!isSet) return { level: 'warn', message: `${name} was already unset.` };
+            await clearSecret(entry.id, name);
+            message = `${name} cleared.${restart}`;
+            break;
+          default:
+            return null; // dialog dismissed
+        }
+        await resolve();
+        await updatePanel(buildPanelModel());
+        return { level: 'info', message };
       },
     });
 
@@ -463,6 +590,7 @@ joplin.plugins.register({
       { commandName: 'sidecarLauncher.editSidecar' },
       { commandName: 'sidecarLauncher.duplicateSidecar' },
       { commandName: 'sidecarLauncher.removeSidecar' },
+      { commandName: 'sidecarLauncher.manageSecrets' },
       { commandName: 'sidecarLauncher.editConfigs' },
       { commandName: 'sidecarLauncher.preflight' },
       { commandName: 'sidecarLauncher.authoriseJoplin' },

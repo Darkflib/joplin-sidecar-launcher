@@ -6,8 +6,12 @@
  *
  * The objects produced are the user-authored shape stored in `sidecar.configs`
  * (name, command, args, …) — never the resolved SidecarEntry, so the shared
- * Joplin token is never written into the JSON.
+ * Joplin token is never written into the JSON. Secret env vars appear here by
+ * name only; their values are set through the separate Secrets dialog and are
+ * never rendered into any HTML.
  */
+
+import { envToText, envFromText, parseEnv, parseSecretNames } from './envVars';
 
 type Raw = Record<string, unknown>;
 
@@ -46,7 +50,11 @@ const FIELD = 'display:block;margin:10px 0 16px;font-size:14px';
 const INPUT = 'width:100%;box-sizing:border-box;padding:6px 9px;font-size:14px;margin-top:4px';
 const HINT = 'color:#888;font-size:12px';
 
-export function sidecarFormHtml(existing: Raw | null): string {
+/**
+ * @param setSecretNames names of this sidecar's secrets that currently have a
+ *   value — used only to show a set/unset marker next to each declared name.
+ */
+export function sidecarFormHtml(existing: Raw | null, setSecretNames: string[] = []): string {
   const argsText = Array.isArray(existing?.args)
     ? (existing!.args as unknown[]).filter((a): a is string => typeof a === 'string').join('\n')
     : '';
@@ -56,6 +64,23 @@ export function sidecarFormHtml(existing: Raw | null): string {
   const interval = num(existing, 'healthIntervalSeconds', 5);
   const maxLog = num(existing, 'maxLogLines', 100);
   const title = existing ? 'Edit sidecar' : 'Add sidecar';
+  // Show whatever valid pairs the raw entry holds; invalid ones are reported by
+  // loadConfigs() and dropping them here would silently "fix" the JSON on save.
+  const rawEnv = existing?.env && typeof existing.env === 'object' && !Array.isArray(existing.env)
+    ? Object.fromEntries(
+        Object.entries(existing.env as Raw).filter((e): e is [string, string] => typeof e[1] === 'string'),
+      )
+    : {};
+  const secretNames = Array.isArray(existing?.secretEnv)
+    ? (existing!.secretEnv as unknown[]).filter((n): n is string => typeof n === 'string')
+    : [];
+  const secretStatus = secretNames.length
+    ? secretNames
+        .map((n) => `<code>${text(n)}</code> ${setSecretNames.includes(n)
+          ? '<span style="color:#4caf50">set</span>'
+          : '<span style="color:#ff9800">unset</span>'}`)
+        .join(' · ')
+    : '';
 
   return `<form name="main" style="width:640px;max-width:100%;font-size:14px;line-height:1.4">
     <h3 style="margin:0 0 14px;font-size:17px">${title}</h3>
@@ -92,6 +117,18 @@ export function sidecarFormHtml(existing: Raw | null): string {
     <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center;margin:10px 0 14px;font-size:14px">
       <label>Autostart ${boolSelect('autostart', autostart)}</label>
       <label>Stop on unload ${boolSelect('stopOnUnload', stopOnUnload)}</label>
+    </div>
+
+    <label style="${FIELD}">Environment variables <span style="${HINT}">— optional, one <code>KEY=value</code> per line; stored in plaintext</span>
+      <textarea name="env" rows="4" placeholder="MCP_HOST=127.0.0.1&#10;MCP_PORT=5005" style="${INPUT};font-family:monospace">${text(envToText(rawEnv))}</textarea>
+    </label>
+
+    <label style="${FIELD}">Secret environment variables <span style="${HINT}">— optional, one name per line; values go in the keychain</span>
+      <textarea name="secretEnv" rows="2" placeholder="MCP_API_KEY" style="${INPUT};font-family:monospace">${text(secretNames.join('\n'))}</textarea>
+    </label>
+    <div style="${HINT};margin:-10px 0 16px">
+      ${secretStatus ? `${secretStatus}<br>` : ''}Set, generate, or clear values with the panel's <strong>Secrets</strong> button after saving.
+      JOPLIN_TOKEN, JOPLIN_BASE_URL, and JOPLIN_SIDECAR_LAUNCHED_BY are set by the launcher and can't be overridden.
     </div>
 
     <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center;font-size:14px">
@@ -141,5 +178,49 @@ export function parseSidecarForm(
   value.healthIntervalSeconds = clampInt(f.healthIntervalSeconds, 5, 1, 300);
   value.maxLogLines = clampInt(f.maxLogLines, 100, 10, 1000);
 
+  // Env: parse KEY=value lines, then apply the same validation loadConfigs() uses
+  // so the form refuses what Start would refuse. Messages name keys, never values.
+  const { env: envRaw, errors: lineErrors } = envFromText(typeof f.env === 'string' ? f.env : '');
+  const { env, errors: envErrors } = parseEnv(envRaw);
+  const secretList = get('secretEnv')
+    .split('\n')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  const { names: secretEnv, errors: secretErrors } = parseSecretNames(secretList, env);
+  const problems = [...lineErrors, ...envErrors, ...secretErrors];
+  if (problems.length) {
+    return { ok: false, message: problems.join('\n') };
+  }
+  if (Object.keys(env).length) value.env = env;
+  if (secretEnv.length) value.secretEnv = secretEnv;
+
   return { ok: true, value };
+}
+
+/**
+ * The Secrets dialog: pick one of the sidecar's declared secret names and set,
+ * generate, copy, or clear its value. The value field always starts empty — an
+ * existing value is never rendered into the HTML.
+ */
+export function secretsDialogHtml(sidecarName: string, names: string[], setNames: string[]): string {
+  const options = names
+    .map((n) => `<option value="${attr(n)}">${text(n)} — ${setNames.includes(n) ? 'set' : 'unset'}</option>`)
+    .join('');
+  return `<form name="main" style="width:520px;max-width:100%;font-size:14px;line-height:1.4">
+    <h3 style="margin:0 0 14px;font-size:17px">Secrets — ${text(sidecarName)}</h3>
+
+    <label style="${FIELD}">Variable
+      <select name="name" style="${INPUT}">${options}</select>
+    </label>
+
+    <label style="${FIELD}">New value <span style="${HINT}">— only used by <strong>Set</strong></span>
+      <input type="password" name="value" autocomplete="off" spellcheck="false" style="${INPUT};font-family:monospace">
+    </label>
+
+    <div style="${HINT}">
+      Values are stored in the OS keychain, never in the Sidecars JSON.
+      <strong>Generate</strong> stores 32 random bytes (base64url) and copies the value to the clipboard —
+      handy for API keys such as <code>MCP_API_KEY</code>. Restart the sidecar to apply changes.
+    </div>
+  </form>`;
 }
