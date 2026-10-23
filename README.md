@@ -36,7 +36,7 @@ A Joplin desktop plugin that launches, monitors, and stops local sidecar process
 
 No marketplace listing yet. Install manually:
 
-1. Download the `.jpl` file from the [Releases](https://github.com/darkflib/joplin-sidecar-launcher/releases) page (or build it yourself — see below).
+1. Download `joplin-sidecar-launcher.jpl` from the [latest release](https://github.com/darkflib/joplin-sidecar-launcher/releases/latest) (or build it yourself — see below). Each release also carries a `.sha256` file; check it with `sha256sum -c joplin-sidecar-launcher.jpl.sha256`.
 2. In Joplin: *Tools → Options → Plugins → Install from file* → select the `.jpl`.
 3. Restart Joplin.
 
@@ -141,6 +141,18 @@ Or manually (`.jpl` files are **TAR archives**, not zip — using `zip` will pro
 cd publish
 tar -cf ../joplin-sidecar-launcher.jpl index.js manifest.json
 ```
+
+CI builds the `.jpl` on every push to `main` and every pull request, and attaches it to the run as an artifact.
+
+### Cutting a release
+
+Releases are built by `.github/workflows/release.yml` when a `v*` tag is pushed:
+
+1. Bump `version` in **both** `package.json` and `src/manifest.json` (Joplin reads the manifest; `scripts/check-version.js` fails the build if they drift).
+2. Merge to `main`.
+3. Tag and push: `git tag v0.3.1 && git push origin v0.3.1`.
+
+The workflow refuses a tag that doesn't match the versions, then typechecks, packages, and publishes a GitHub release with the `.jpl`, its SHA-256, and auto-generated notes. Tags with a hyphen (e.g. `v0.4.0-rc.1`) are marked as prereleases.
 
 For development (source maps, watch mode):
 
