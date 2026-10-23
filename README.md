@@ -120,7 +120,7 @@ the one-time migration can read them).
 
 ## Build from source
 
-Prerequisites: Node.js ≥ 18, npm ≥ 9.
+Prerequisites: Node.js ≥ 20.9 (webpack-cli 7 and copy-webpack-plugin 14 require it), npm ≥ 9.
 
 ```bash
 git clone https://github.com/darkflib/joplin-sidecar-launcher.git
