@@ -11,7 +11,7 @@
  * never rendered into any HTML.
  */
 
-import { envToText, envFromText, parseEnv, parseSecretNames } from './envVars';
+import { envToText, envFromText, envFormRepresentable, parseEnv, parseSecretNames } from './envVars';
 
 type Raw = Record<string, unknown>;
 
@@ -64,13 +64,17 @@ export function sidecarFormHtml(existing: Raw | null, setSecretNames: string[] =
   const interval = num(existing, 'healthIntervalSeconds', 5);
   const maxLog = num(existing, 'maxLogLines', 100);
   const title = existing ? 'Edit sidecar' : 'Add sidecar';
-  // Show whatever valid pairs the raw entry holds; invalid ones are reported by
-  // loadConfigs() and dropping them here would silently "fix" the JSON on save.
-  const rawEnv = existing?.env && typeof existing.env === 'object' && !Array.isArray(existing.env)
-    ? Object.fromEntries(
-        Object.entries(existing.env as Raw).filter((e): e is [string, string] => typeof e[1] === 'string'),
-      )
-    : {};
+  // An env the textarea can't represent exactly is shown read-only and kept
+  // verbatim on save (see parseSidecarForm), so editing another field never
+  // rewrites it.
+  const envLocked = !envFormRepresentable(existing?.env);
+  const envText = envLocked
+    ? `# Contains values this form can't edit safely (multi-line, padded with spaces,\n` +
+      `# non-string, or an invalid key). Kept unchanged — edit via Edit JSON.\n` +
+      (existing?.env && typeof existing.env === 'object' && !Array.isArray(existing.env)
+        ? Object.keys(existing.env as Raw).join('\n')
+        : '')
+    : envToText((existing?.env as Record<string, string> | undefined) ?? {});
   const secretNames = Array.isArray(existing?.secretEnv)
     ? (existing!.secretEnv as unknown[]).filter((n): n is string => typeof n === 'string')
     : [];
@@ -120,7 +124,7 @@ export function sidecarFormHtml(existing: Raw | null, setSecretNames: string[] =
     </div>
 
     <label style="${FIELD}">Environment variables <span style="${HINT}">— optional, one <code>KEY=value</code> per line; stored in plaintext</span>
-      <textarea name="env" rows="4" placeholder="MCP_HOST=127.0.0.1&#10;MCP_PORT=5005" style="${INPUT};font-family:monospace">${text(envToText(rawEnv))}</textarea>
+      <textarea name="env" rows="4"${envLocked ? ' readonly' : ''} placeholder="MCP_HOST=127.0.0.1&#10;MCP_PORT=5005" style="${INPUT};font-family:monospace">${text(envText)}</textarea>
     </label>
 
     <label style="${FIELD}">Secret environment variables <span style="${HINT}">— optional, one name per line; values go in the keychain</span>
@@ -148,6 +152,7 @@ export function sidecarFormHtml(existing: Raw | null, setSecretNames: string[] =
  */
 export function parseSidecarForm(
   fd: Record<string, string> | undefined,
+  existing: Raw | null = null,
 ): { ok: true; value: Raw } | { ok: false; message: string } {
   const f = fd ?? {};
   const get = (k: string) => (typeof f[k] === 'string' ? f[k].trim() : '');
@@ -180,18 +185,29 @@ export function parseSidecarForm(
 
   // Env: parse KEY=value lines, then apply the same validation loadConfigs() uses
   // so the form refuses what Start would refuse. Messages name keys, never values.
-  const { env: envRaw, errors: lineErrors } = envFromText(typeof f.env === 'string' ? f.env : '');
-  const { env, errors: envErrors } = parseEnv(envRaw);
+  // A locked env (decided from `existing`, not from the submitted form) is kept
+  // verbatim; loadConfigs() reports any problems in it as usual.
+  const envLocked = !envFormRepresentable(existing?.env);
+  const { env: envRaw, errors: lineErrors } = envLocked
+    ? { env: {}, errors: [] as string[] }
+    : envFromText(typeof f.env === 'string' ? f.env : '');
+  const { env, errors: envErrors } = envLocked ? parseEnv(existing?.env) : parseEnv(envRaw);
   const secretList = get('secretEnv')
     .split('\n')
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
   const { names: secretEnv, errors: secretErrors } = parseSecretNames(secretList, env);
-  const problems = [...lineErrors, ...envErrors, ...secretErrors];
+  // A locked env's own errors aren't the form's to refuse — the user can't fix
+  // them here; Start reports them.
+  const problems = [...lineErrors, ...(envLocked ? [] : envErrors), ...secretErrors];
   if (problems.length) {
     return { ok: false, message: problems.join('\n') };
   }
-  if (Object.keys(env).length) value.env = env;
+  if (envLocked) {
+    if (existing?.env !== undefined) value.env = existing.env;
+  } else if (Object.keys(env).length) {
+    value.env = env;
+  }
   if (secretEnv.length) value.secretEnv = secretEnv;
 
   return { ok: true, value };

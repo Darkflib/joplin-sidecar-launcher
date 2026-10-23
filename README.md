@@ -234,7 +234,7 @@ npm run build         # development build, no minification
 - **Graceful then forced.** Each sidecar is launched as its own process group, and signals go to the whole group — so wrapper-spawned children (e.g. `uv run … uvicorn`) are stopped too, not just the immediate child. The Stop button sends SIGTERM; restart and plugin-unload escalate to SIGKILL if SIGTERM hasn't worked (3 s for restart, ~0.8 s on unload).
 - **HTTP health checks only.** HTTPS localhost endpoints are not supported (self-signed cert handling adds complexity for marginal benefit here).
 - **Log buffer is in-memory only.** Logs are lost when Joplin restarts. Persistent log files are a planned extension.
-- **Env values in the form are single-line and trimmed.** Values with leading/trailing whitespace or embedded newlines must be set via the raw JSON editor (or, for secrets, are trimmed on *Set*).
+- **Env values in the form are single-line and trimmed.** Values with leading/trailing whitespace or embedded newlines must be set via the raw JSON editor (secrets are trimmed on *Set*). If an entry's `env` holds such a value, the form shows it read-only and keeps it unchanged on save.
 - **Secret values are per sidecar id.** Editing an entry's `id` in the raw JSON (or deleting it, so a new one is minted) orphans its secrets; set them again.
 - **Children can still leak their own env.** Masking covers the launcher's captured log only — a sidecar that writes secrets to its own log files or exposes them over HTTP is outside the launcher's control.
 - **macOS/Linux only tested.** Should work on Windows but SIGTERM semantics differ; consider using a wrapper script that handles graceful shutdown.

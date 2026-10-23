@@ -102,6 +102,36 @@ export function parseSecretNames(
   return { names, errors };
 }
 
+/**
+ * True when a raw `env` value survives a round trip through the form's
+ * `KEY=value` textarea unchanged. Anything else (values with newlines or
+ * leading/trailing whitespace, non-string values, invalid keys, a non-object)
+ * must be left to the JSON editor, or saving an unrelated field would rewrite it.
+ */
+export function envFormRepresentable(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value !== 'object' || Array.isArray(value)) return false;
+  return Object.entries(value as Record<string, unknown>).every(
+    ([k, v]) => ENV_KEY_RE.test(k) && typeof v === 'string' && !/[\r\n]/.test(v) && v === v.trim(),
+  );
+}
+
+/**
+ * Set `key` in an env object being built for spawn. On Windows env names are
+ * case-insensitive and Node keeps only the first of several case variants, so
+ * drop any existing variant first — otherwise an inherited `PATH` would beat a
+ * configured `Path` and the documented precedence would not hold.
+ */
+export function setEnvVar(env: Record<string, string>, key: string, value: string, platform = process.platform): void {
+  if (platform === 'win32') {
+    const upper = key.toUpperCase();
+    for (const existing of Object.keys(env)) {
+      if (existing !== key && existing.toUpperCase() === upper) delete env[existing];
+    }
+  }
+  env[key] = value;
+}
+
 /** Render an env object as `KEY=value` lines (for the form's textarea). */
 export function envToText(env: Record<string, string>): string {
   return Object.entries(env)

@@ -209,7 +209,7 @@ joplin.plugins.register({
         formData?: { main?: Record<string, string> };
       };
       if (res.id !== 'save') return null;
-      const parsed = parseSidecarForm(res.formData?.main);
+      const parsed = parseSidecarForm(res.formData?.main, existing);
       if (!parsed.ok) {
         await joplin.views.dialogs.showMessageBox(`Not saved: ${parsed.message}`);
         return null;

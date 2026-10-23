@@ -1,7 +1,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import { SidecarEntry, SidecarState, SidecarStatus, HealthStatus, LogLine } from './types';
 import { checkHealth } from './health';
-import { PYTHON_ENV_BLOCKLIST } from './envVars';
+import { PYTHON_ENV_BLOCKLIST, setEnvVar } from './envVars';
 
 type StatusChangeCallback = (status: SidecarStatus) => void;
 
@@ -22,10 +22,12 @@ function buildChildEnv(entry: SidecarEntry): Record<string, string> {
       env[k] = v;
     }
   }
-  Object.assign(env, entry.env, entry.secretValues);
-  env['JOPLIN_SIDECAR_LAUNCHED_BY'] = 'joplin-sidecar-launcher';
-  if (entry.joplinBaseUrl) env['JOPLIN_BASE_URL'] = entry.joplinBaseUrl;
-  if (entry.joplinToken) env['JOPLIN_TOKEN'] = entry.joplinToken;
+  // setEnvVar() replaces case variants on Windows so each layer really overrides.
+  for (const [k, v] of Object.entries(entry.env ?? {})) setEnvVar(env, k, v);
+  for (const [k, v] of Object.entries(entry.secretValues ?? {})) setEnvVar(env, k, v);
+  setEnvVar(env, 'JOPLIN_SIDECAR_LAUNCHED_BY', 'joplin-sidecar-launcher');
+  if (entry.joplinBaseUrl) setEnvVar(env, 'JOPLIN_BASE_URL', entry.joplinBaseUrl);
+  if (entry.joplinToken) setEnvVar(env, 'JOPLIN_TOKEN', entry.joplinToken);
   return env;
 }
 
