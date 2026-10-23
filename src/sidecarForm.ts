@@ -234,7 +234,7 @@ export function secretsDialogHtml(sidecarName: string, names: string[], setNames
     </label>
 
     <div style="${HINT}">
-      Values are stored in the OS keychain, never in the Sidecars JSON.
+      Values are stored encrypted (key held in the OS keychain), never in the Sidecars JSON.
       <strong>Generate</strong> stores 32 random bytes (base64url) and copies the value to the clipboard —
       handy for API keys such as <code>MCP_API_KEY</code>. Restart the sidecar to apply changes.
     </div>
