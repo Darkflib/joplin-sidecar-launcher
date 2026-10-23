@@ -144,6 +144,8 @@ tar -cf ../joplin-sidecar-launcher.jpl index.js manifest.json
 
 CI builds the `.jpl` on every push to `main` and every pull request, and attaches it to the run as an artifact.
 
+After building, `npm run smoke` loads `publish/index.js` with a stub `joplin` API and checks that `onStart` registers settings, dialogs, the panel and commands; that an autostart sidecar really spawns; and that the unload handler stops it. CI and the release workflow both run it. It catches broken bundles, not UI regressions, so the manual checklist below still applies.
+
 ### Cutting a release
 
 Releases are built by `.github/workflows/release.yml` when a `v*` tag is pushed:
