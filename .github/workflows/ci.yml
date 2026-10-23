@@ -38,6 +38,9 @@ jobs:
       - name: Build .jpl
         run: npm run package
 
+      - name: Smoke test bundle
+        run: npm run smoke
+
       - name: Verify archive contents
         run: tar -tvf joplin-sidecar-launcher.jpl
 

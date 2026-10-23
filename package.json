@@ -7,7 +7,8 @@
     "build": "webpack",
     "package": "npm run dist && cd publish && tar -cf ../joplin-sidecar-launcher.jpl index.js manifest.json",
     "typecheck": "tsc --noEmit",
-    "prepare": "npm run dist"
+    "prepare": "npm run dist",
+    "smoke": "node scripts/smoke-test.js"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",
