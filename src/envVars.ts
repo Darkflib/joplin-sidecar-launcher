@@ -28,6 +28,11 @@ export function envKeyProblem(key: string): string | null {
   if (!ENV_KEY_RE.test(key)) {
     return `"${key}" is not a valid environment variable name (letters, digits, underscore; not starting with a digit).`;
   }
+  // Matches the regex, but `obj['__proto__'] = v` hits the prototype setter and
+  // the pair would vanish silently instead of being reported.
+  if (key === '__proto__') {
+    return `"${key}" is reserved and cannot be used as an environment variable name.`;
+  }
   const upper = key.toUpperCase();
   if (LAUNCHER_ENV_KEYS.includes(upper)) {
     return `${key} is set by the launcher and cannot be overridden.`;

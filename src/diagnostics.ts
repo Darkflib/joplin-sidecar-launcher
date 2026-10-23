@@ -1,10 +1,13 @@
 import joplin from 'api';
 import { SidecarEntry, SidecarStatus } from './types';
 import { runPreflight, formatPreflight } from './preflight';
+import { looksSecret } from './envVars';
 
 /**
- * Env section for the report: non-secret vars with their values, secret vars by
- * name only as ***set*** / ***unset***. Secret values are never read here beyond
+ * Env section for the report: non-secret vars with their values (except
+ * credential-looking names, which preflight already flags and whose values are
+ * hidden here since the report is meant to be pasted), secret vars by name only
+ * as ***set*** / ***unset***. Secret values are never read here beyond
  * a presence check.
  */
 export function envDiagnosticLines(config: SidecarEntry | null): string[] {
@@ -14,7 +17,7 @@ export function envDiagnosticLines(config: SidecarEntry | null): string[] {
   const lines: string[] = [];
   const keys = Object.keys(env);
   lines.push(keys.length ? 'Env:' : 'Env: (none)');
-  for (const k of keys) lines.push(`  ${k}=${env[k]}`);
+  for (const k of keys) lines.push(`  ${k}=${looksSecret(k) ? '***hidden (credential-like name)***' : env[k]}`);
   lines.push(secretNames.length ? 'Secret env:' : 'Secret env: (none)');
   for (const n of secretNames) {
     lines.push(`  ${n}=${Object.prototype.hasOwnProperty.call(secretValues, n) ? '***set***' : '***unset***'}`);

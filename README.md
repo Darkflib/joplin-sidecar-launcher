@@ -109,7 +109,8 @@ Joplin token. If no OS keychain is available Joplin falls back to its own
 settings store, exactly as it does for the token.
 
 Secret values never appear in the Sidecars JSON, the forms, the result line,
-or diagnostics (which show `NAME=***set***` / `NAME=***unset***`). If the
+or diagnostics (which show `NAME=***set***` / `NAME=***unset***`; plaintext
+`env` values with credential-looking names are hidden there too). If the
 sidecar prints a secret (or the Joplin token) to stdout/stderr, it is masked
 as `***` in the captured log. Values shorter than four characters are not
 masked.
