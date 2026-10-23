@@ -12,7 +12,7 @@ A Joplin desktop plugin that launches, monitors, and stops local sidecar process
 - **Never** install this plugin on a shared Joplin instance.
 - The health check URL is restricted to `localhost` (`127.0.0.1`, `::1`, `localhost`) and HTTP only. Remote URLs will be rejected.
 - The plugin strips a short list of Python environment variables (`PYTHONHOME`, `PYTHONPATH`, `PYTHONSTARTUP`, `VIRTUAL_ENV`, `CONDA_PREFIX`) to prevent the host Python environment from leaking into child interpreters. This is a best-effort measure, not a sandbox.
-- Values in a sidecar's `env` object are stored **in plaintext** in the Sidecars JSON. Put credentials in `secretEnv` instead — those values live in the OS keychain (see [Environment variables](#environment-variables)).
+- Values in a sidecar's `env` object are stored **in plaintext** in the Sidecars JSON. Put credentials in `secretEnv` instead — those values are stored encrypted, with the key held in the OS keychain (see [Environment variables](#environment-variables)).
 
 ---
 
@@ -27,7 +27,7 @@ A Joplin desktop plugin that launches, monitors, and stops local sidecar process
 - **Stop/Restart**: sends SIGTERM to the whole process group gracefully; restart waits up to 3 s then SIGKILL if the process hasn't exited.
 - **Stale-port reclaim**: before starting, checks whether the sidecar's port (from its `healthUrl`/`dashboardUrl`) is already bound. If a leftover process from a previous session holds it, you're offered a one-click *stop it and continue* — no more manual `lsof … kill`.
 - **Inline results, not alert spam**: button actions report their outcome on a line beneath the buttons. Benign no-ops (e.g. *Stop* when already stopped) just show a message — no popup. Popups remain only where the action is blocked and needs guidance (failed preflight before *Start*) or is an explicit flow (preflight report, Joplin auth, the JSON editor).
-- **Environment injection**: per-sidecar `env` vars, plus `secretEnv` vars whose values are kept in the OS keychain and set via a *Secrets* dialog (with a *Generate* button for API keys).
+- **Environment injection**: per-sidecar `env` vars, plus `secretEnv` vars whose values are stored encrypted (key in the OS keychain) and set via a *Secrets* dialog (with a *Generate* button for API keys).
 - **Diagnostics**: one-click clipboard dump of the selected sidecar's config, status, and recent log lines — useful for bug reports. Secret values are redacted.
 - **Status panel**: a side panel showing live state, PID, health, timestamps, and log output with Start/Stop/Restart/Open-dashboard/Edit/Copy-diag buttons.
 - **Tools menu integration**: all commands also available under *Tools → Sidecar Launcher* (they act on the sidecar currently selected in the panel).
@@ -75,7 +75,7 @@ Each object in the array:
 | `healthIntervalSeconds` | no | Health poll interval, 1–300. Defaults to `5`. |
 | `maxLogLines` | no | Rolling log buffer size, 10–1000. Defaults to `100`. |
 | `env` | no | Object of extra **non-secret** environment variables, e.g. `{ "MCP_HOST": "127.0.0.1", "MCP_PORT": "5005" }`. Values must be strings. Stored in plaintext. |
-| `secretEnv` | no | Array of **secret** variable *names*, e.g. `["MCP_API_KEY"]`. Values are set with the panel's *Secrets* button and stored in the OS keychain — never in this JSON. |
+| `secretEnv` | no | Array of **secret** variable *names*, e.g. `["MCP_API_KEY"]`. Values are set with the panel's *Secrets* button and stored encrypted by Joplin's secure-settings store — never in this JSON. |
 
 The **Joplin API base URL and token are configured separately** (the table below
 the JSON, and the *Authorise Joplin API token* command) and are shared across
@@ -103,10 +103,33 @@ panel. Pick a variable and either type a value and click **Set**, click
 **Generate** to store 32 random bytes (base64url) and copy them to the
 clipboard (ideal for `MCP_API_KEY`, which you then paste into your MCP client
 config), **Copy** to put the current value on the clipboard, or **Clear**.
-Restart the sidecar to apply. All secret values sit in a single keychain-backed
+Restart the sidecar to apply. All secret values sit in a single `secure`
 setting holding `{ sidecarId: { NAME: value } }` — the same mechanism as the
-Joplin token. If no OS keychain is available Joplin falls back to its own
-settings store, exactly as it does for the token.
+Joplin token.
+
+**Where secure settings actually live.** Desktop Joplin does not create one
+keychain item per secure setting. It uses Electron's `safeStorage`: the OS
+keychain holds a single master key for the app (on macOS a Keychain Access item
+named "Joplin Safe Storage"; libsecret/kwallet on Linux; DPAPI on Windows), and
+each value is encrypted with it and stored in Joplin's own database
+(`database.sqlite`, table `key_values`, key
+`KeychainServiceDriver.secureStore.setting.plugin-io.github.darkflib.joplin-sidecar-launcher.sidecar.secretEnv`).
+So you won't find your secrets in Keychain Access — only the master key — and a
+copy of the database is useless without that keychain item.
+
+If writing to the keychain fails (e.g. a locked macOS login keychain), Joplin
+deliberately falls back to saving the value **in plaintext** in its `settings`
+table so it isn't lost, and logs `Could not set setting on the keychain` in
+`log.txt`. Surviving a restart doesn't tell the two apart; to check, quit Joplin
+and run:
+
+```bash
+DB=~/.config/joplin-desktop/database.sqlite   # adjust for your profile
+# Expect one row: the encrypted blob's length, never the value.
+sqlite3 "$DB" "SELECT key, length(value) FROM key_values WHERE key LIKE 'KeychainServiceDriver.secureStore.%secretEnv';"
+# Expect no rows. A row here means the plaintext fallback was used.
+sqlite3 "$DB" "SELECT key FROM settings WHERE key LIKE '%sidecar.secretEnv%';"
+```
 
 Secret values never appear in the Sidecars JSON, the forms, the result line,
 or diagnostics (which show `NAME=***set***` / `NAME=***unset***`; plaintext
@@ -272,7 +295,7 @@ to set the JSON; absolute `command` paths (run `which python3`).
 21. **Duplicate** — click *Duplicate*. A *"… copy"* entry appears, selected, with the same fields.
 22. **Remove** — click *Remove*, confirm. The entry disappears; if it was running it is stopped first. Cancel leaves it untouched (inline message, no error popup).
 23. **Env injection** — *Edit* a sidecar running `/bin/sh` with args `-c` / `env; sleep 600`, add `SMOKE_ENV=hello` under *Environment variables*, Save, Start. The log shows `SMOKE_ENV=hello` and `JOPLIN_SIDECAR_LAUNCHED_BY=joplin-sidecar-launcher`.
-24. **Secret injection** — on the same sidecar add `MY_SECRET` under *Secret environment variables*, Save; the result line warns it is unset and Preflight lists it. Click *Secrets*, pick `MY_SECRET`, type a value, *Set*. Restart: the log shows `MY_SECRET=***` (masked), and the Sidecars JSON (*Edit JSON*) contains only the name. Use *Generate* on it: the clipboard holds a 43-character base64url value; *Generate* again asks before replacing. *Clear* makes it unset again.
+24. **Secret injection** — on the same sidecar add `MY_SECRET` under *Secret environment variables*, Save; the result line warns it is unset and Preflight lists it. Click *Secrets*, pick `MY_SECRET`, type a value, *Set*. Restart: the log shows `MY_SECRET=***` (masked), and the Sidecars JSON (*Edit JSON*) contains only the name. Use *Generate* on it: the clipboard holds a 43-character base64url value; *Generate* again asks before replacing. Quit Joplin and run the two `sqlite3` checks under [Environment variables](#environment-variables): one encrypted row in `key_values`, none in `settings`. *Clear* makes it unset again.
 25. **Diagnostics redaction** — with one secret set and one unset, *Copy diag*. The report shows `SMOKE_ENV=hello`, `MY_SECRET=***set***`, the other as `***unset***`, and neither the secret value nor the Joplin token appears anywhere (including the log lines).
 26. **Reserved-key rejection** — in the form, add `JOPLIN_TOKEN=x` under *Environment variables*: Save is refused with a message naming the key. Put `"env": {"JOPLIN_BASE_URL": "x"}` or `"secretEnv": ["PYTHONPATH"]` in via *Edit JSON*: *Start* is blocked with a dialog naming the key. Also try `"env": {"MCP_PORT": 5005}` (number) and `"env": {"1BAD": "x"}` — both are rejected.
 27. **Secrets lifecycle** — *Duplicate* a sidecar with a secret set: the copy's result line reports its secrets unset, and the original's is still set. *Remove* the copy, then the original: re-adding a sidecar with the same name does not resurrect old values (secrets are keyed by id and deleted on removal).
