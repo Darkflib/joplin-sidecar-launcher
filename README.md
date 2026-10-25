@@ -151,14 +151,17 @@ injected. Removing a sidecar deletes all of its values.
 {
   "name": "Joplin MCP",
   "command": "/opt/homebrew/bin/uv",
-  "args": ["run", "--project", "/Users/you/mcp-joplin-streamable-sse", "mcp-joplin-streamable-sse"],
-  "cwd": "/Users/you/mcp-joplin-streamable-sse",
+  "args": ["run", "--project", "/Users/you/mcp-joplin", "mcp-joplin"],
+  "cwd": "/Users/you/mcp-joplin",
   "healthUrl": "http://127.0.0.1:5005/health",
   "env": { "MCP_HOST": "127.0.0.1", "MCP_PORT": "5005" },
   "secretEnv": ["MCP_API_KEY"],
   "autostart": true
 }
 ```
+
+This needs [mcp-joplin](https://github.com/Darkflib/mcp-joplin) 0.2 or later. Older checkouts,
+from when it was `mcp-joplin-streamable-sse`, use that name for both the path and the command.
 
 Then *Secrets → MCP_API_KEY → Generate*, and paste the copied key into your
 MCP client's `X-API-Key` header. `JOPLIN_BASE_URL` / `JOPLIN_TOKEN` come from
